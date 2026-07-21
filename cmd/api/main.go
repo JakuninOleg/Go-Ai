@@ -7,11 +7,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/JakuninOleg/go-platform/internal/routes"
+	"github.com/jakuninoleg/Go-Ai/internal/routes"
+	"github.com/jakuninoleg/Go-Ai/internal/config"
 )
 
 
 func main() {
+
+	cfg := config.Load()
 
 	r := chi.NewRouter()
 
@@ -20,10 +23,11 @@ func main() {
 
 	routes.Register(r)
 
-
-	port := ":8080"
+	port := ":" + cfg.Port
 
 	fmt.Printf("Server starting on http://localhost%s\n", port)
 
-	http.ListenAndServe(port, r)
+	if err := http.ListenAndServe(port, r); err != nil {
+    fmt.Printf("Server failed: %v\n", err)
+}
 }

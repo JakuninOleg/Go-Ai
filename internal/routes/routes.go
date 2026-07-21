@@ -3,7 +3,7 @@ package routes
 import (
 	"github.com/go-chi/chi/v5"
 
-	"github.com/JakuninOleg/go-platform/internal/handlers"
+	"github.com/jakuninoleg/Go-Ai/internal/handlers"
 )
 
 
