@@ -1,0 +1,42 @@
+.git
+.gitignore
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Local IDE/agent files
+.idea/
+.vscode/
+.harvi/
+.claude/
+CLAUDE.md
+AGENTS.local.md
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Build/test artifacts
+bin/
+build/
+dist/
+tmp/
+coverage/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Generated analysis/graph artifacts
+graphify/
+graphify-*/
+*.dot
+*.gv
+*.graphml
+*.svg
