@@ -159,16 +159,119 @@ Follow-up request after the model asks for a tool:
 }
 ```
 
-## Streaming and gradual typing in UI
+## Streaming responses
 
-Go-Ai is designed to preserve proxying behavior. If the upstream provider and your client use `stream: true`, a Next route can read the upstream `ReadableStream` and return Server-Sent Events or another stream format to the UI. Vercel AI SDK is not required for this, although it can be useful for chat UI helpers.
+Go-Ai supports streaming as HTTP/SSE pass-through on the same endpoint: `POST /v1/chat/completions`. This is not a WebSocket flow. Send `stream: true` in the OpenAI-compatible request body and read the response as a stream.
 
-Current status: streaming is a pass-through goal, but it should be validated end-to-end with the deployed provider/client path before depending on it in production.
+Go-Ai does not parse or modify SSE chunks. It resolves the local model alias, forwards the request upstream, then proxies the upstream status, headers, and body back to the caller. Streaming tool calls may arrive split across multiple SSE chunks, so your Next app or browser UI must assemble partial deltas before executing or displaying structured tool-call data. Tool execution still stays in the client/Next application; Go-Ai only passes payloads through.
 
-For a typing effect in the UI, you have two options:
+Quick deployed smoke test with curl:
 
-- real streaming from provider to Next to browser, which is the better UX for long responses;
-- client-side typing simulation after receiving a full response, which is simpler but does not reduce perceived wait time before the first token.
+```sh
+curl -N https://go-ai-i8r-lg.fly.dev/v1/chat/completions \
+  -H "Authorization: Bearer <GO_AI_SHARED_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"gemini-flash",
+    "messages":[{"role":"user","content":"Say hello in one short sentence."}],
+    "stream":true
+  }'
+```
+
+Use `-N` so curl does not buffer the streamed response.
+
+### Next server route proxy
+
+Keep `GO_AI_SHARED_SECRET` only on the server side of your Next app. Browser code must not call Go-Ai directly with the shared secret. Instead, proxy the stream through a Next route handler:
+
+```ts
+// app/api/chat/stream/route.ts
+import { NextRequest } from "next/server";
+
+const GO_AI_BASE_URL = "https://go-ai-i8r-lg.fly.dev";
+
+export async function POST(request: NextRequest) {
+  const { messages } = await request.json();
+
+  const upstream = await fetch(`${GO_AI_BASE_URL}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.GO_AI_SHARED_SECRET}`,
+    },
+    body: JSON.stringify({
+      model: "gemini-flash",
+      messages,
+      stream: true,
+    }),
+  });
+
+  if (!upstream.body) {
+    return new Response(await upstream.text(), {
+      status: upstream.status,
+      headers: {
+        "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
+      },
+    });
+  }
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "Content-Type": upstream.headers.get("Content-Type") ?? "text/event-stream",
+      "Cache-Control": upstream.headers.get("Cache-Control") ?? "no-cache",
+    },
+  });
+}
+```
+
+Do not call `await res.json()` for streaming responses. Read `response.body` as a `ReadableStream` instead.
+
+### Browser ReadableStream example
+
+The browser calls your Next route, not Go-Ai directly:
+
+```ts
+const response = await fetch("/api/chat/stream", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    messages: [{ role: "user", content: "Say hello." }],
+  }),
+});
+
+if (!response.body) {
+  throw new Error("Streaming is not available in this browser.");
+}
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+let sseBuffer = "";
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+
+  sseBuffer += decoder.decode(value, { stream: true });
+
+  const events = sseBuffer.split("\n\n");
+  sseBuffer = events.pop() ?? "";
+
+  for (const event of events) {
+    if (!event.startsWith("data:")) continue;
+
+    const data = event.slice("data:".length).trim();
+    if (data === "[DONE]") return;
+
+    // Parse provider/OpenAI-compatible deltas here and update your UI.
+    // Tool-call deltas may be partial and need accumulation before use.
+    console.log(data);
+  }
+}
+```
+
+For a typing effect in the UI, prefer real provider-to-Next-to-browser streaming for long responses. A client-side typing simulation after receiving the full response is simpler, but it does not reduce time to first token.
 
 ## Voice input
 
