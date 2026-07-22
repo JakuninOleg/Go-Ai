@@ -42,7 +42,9 @@ curl http://localhost:8080/health
 
 Go-Ai supports tool-calling payloads as an OpenAI-compatible proxy and model router. It does not execute tools itself: tool execution stays in client applications, such as Next apps.
 
-For a Next-focused integration guide with production URL, auth, fetch examples, tool-calling flow, streaming notes, and voice-input guidance, see [docs/next-client.md](docs/next-client.md).
+For a Next-focused integration guide with production URL, auth, fetch examples, HTTP/SSE streaming, tool-calling flow, and voice-input guidance, see [docs/next-client.md](docs/next-client.md).
+
+Streaming uses HTTP/SSE pass-through on `POST /v1/chat/completions` with `stream: true`; it is not a WebSocket flow. Keep `GO_AI_SHARED_SECRET` server-side and proxy browser streams through a trusted server route.
 
 Flow:
 
