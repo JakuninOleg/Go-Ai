@@ -46,6 +46,102 @@ func TestChatUsesDefaultModelWhenMissing(t *testing.T) {
 	}
 }
 
+func TestChatPreservesToolCallingFieldsWithDefaultModel(t *testing.T) {
+	gemini := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+
+	body := []byte(`{
+		"messages":[{"role":"user","content":"What is the weather?"}],
+		"tools":[{
+			"type":"function",
+			"function":{
+				"name":"get_weather",
+				"description":"Get current weather",
+				"parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}
+			}
+		}],
+		"tool_choice":"auto",
+		"parallel_tool_calls":true
+	}`)
+
+	_, err := service.Chat(context.Background(), body)
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(gemini.body, &request); err != nil {
+		t.Fatalf("failed to decode captured body: %v", err)
+	}
+
+	expectedModel, err := json.Marshal(models.Registry[models.DefaultModelAlias].Name)
+	if err != nil {
+		t.Fatalf("failed to marshal expected model: %v", err)
+	}
+	if string(request["model"]) != string(expectedModel) {
+		t.Fatalf("expected model %s, got %s", expectedModel, request["model"])
+	}
+	assertRawJSONEqual(t, request["tools"], []byte(`[{"type":"function","function":{"name":"get_weather","description":"Get current weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}]`))
+	assertRawJSONEqual(t, request["tool_choice"], []byte(`"auto"`))
+	assertRawJSONEqual(t, request["parallel_tool_calls"], []byte(`true`))
+}
+
+func TestChatPreservesAssistantToolCalls(t *testing.T) {
+	gemini := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+
+	body := []byte(`{
+		"model":"gemini-flash",
+		"messages":[{
+			"role":"assistant",
+			"content":null,
+			"tool_calls":[{
+				"id":"call_123",
+				"type":"function",
+				"function":{"name":"get_weather","arguments":"{\"city\":\"Moscow\"}"}
+			}]
+		}]
+	}`)
+
+	_, err := service.Chat(context.Background(), body)
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(gemini.body, &request); err != nil {
+		t.Fatalf("failed to decode captured body: %v", err)
+	}
+
+	assertRawJSONEqual(t, request["messages"], []byte(`[{"role":"assistant","content":null,"tool_calls":[{"id":"call_123","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Moscow\"}"}}]}]`))
+}
+
+func TestChatPreservesToolRoleMessage(t *testing.T) {
+	gemini := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+
+	body := []byte(`{
+		"model":"gemini-flash",
+		"messages":[{
+			"role":"tool",
+			"tool_call_id":"call_123",
+			"content":"{\"temperature\":\"-5 C\"}"
+		}]
+	}`)
+
+	_, err := service.Chat(context.Background(), body)
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(gemini.body, &request); err != nil {
+		t.Fatalf("failed to decode captured body: %v", err)
+	}
+
+	assertRawJSONEqual(t, request["messages"], []byte(`[{"role":"tool","tool_call_id":"call_123","content":"{\"temperature\":\"-5 C\"}"}]`))
+}
+
 func TestChatReturnsUnknownModelError(t *testing.T) {
 	gemini := &captureProvider{}
 	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
@@ -79,4 +175,35 @@ func TestChatReturnsUnknownModelErrorWhenModelIsEmpty(t *testing.T) {
 	if unknownModelErr.Alias != "" {
 		t.Fatalf("expected empty alias, got %q", unknownModelErr.Alias)
 	}
+}
+
+func assertRawJSONEqual(t *testing.T, actual json.RawMessage, expected []byte) {
+	t.Helper()
+
+	var actualValue any
+	if err := json.Unmarshal(actual, &actualValue); err != nil {
+		t.Fatalf("failed to decode actual JSON %s: %v", actual, err)
+	}
+
+	var expectedValue any
+	if err := json.Unmarshal(expected, &expectedValue); err != nil {
+		t.Fatalf("failed to decode expected JSON %s: %v", expected, err)
+	}
+
+	if !jsonValuesEqual(actualValue, expectedValue) {
+		t.Fatalf("expected JSON %s, got %s", expected, actual)
+	}
+}
+
+func jsonValuesEqual(a any, b any) bool {
+	aJSON, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	bJSON, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+
+	return bytes.Equal(aJSON, bJSON)
 }
