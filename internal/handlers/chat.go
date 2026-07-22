@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/jakuninoleg/Go-Ai/internal/models"
 	"github.com/jakuninoleg/Go-Ai/internal/providers"
@@ -55,18 +56,62 @@ func ChatHandler(
 
 		defer resp.Body.Close()
 
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
+		copyResponseHeaders(w.Header(), resp.Header)
 
 		w.WriteHeader(resp.StatusCode)
 
-		io.Copy(
+		copyResponseBody(
 			w,
 			resp.Body,
 		)
+	}
+}
+
+func copyResponseHeaders(dst http.Header, src http.Header) {
+	for key, values := range src {
+		if isHopByHopHeader(key) {
+			continue
+		}
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+}
+
+func isHopByHopHeader(key string) bool {
+	switch strings.ToLower(key) {
+	case "connection",
+		"keep-alive",
+		"proxy-authenticate",
+		"proxy-authorization",
+		"te",
+		"trailer",
+		"transfer-encoding",
+		"upgrade":
+		return true
+	default:
+		return false
+	}
+}
+
+func copyResponseBody(w http.ResponseWriter, body io.Reader) {
+	flusher, canFlush := w.(http.Flusher)
+	buffer := make([]byte, 32*1024)
+
+	for {
+		n, readErr := body.Read(buffer)
+		if n > 0 {
+			if _, writeErr := w.Write(buffer[:n]); writeErr != nil {
+				return
+			}
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+
+		if readErr != nil {
+			return
+		}
 	}
 }
 

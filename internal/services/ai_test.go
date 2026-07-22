@@ -86,6 +86,34 @@ func TestChatPreservesToolCallingFieldsWithDefaultModel(t *testing.T) {
 	assertRawJSONEqual(t, request["parallel_tool_calls"], []byte(`true`))
 }
 
+func TestChatPreservesStreamingFlagAndRewritesModel(t *testing.T) {
+	gemini := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+
+	body := []byte(`{
+		"model":"gemini-flash",
+		"messages":[{"role":"user","content":"Stream this response."}],
+		"stream":true
+	}`)
+
+	_, err := service.Chat(context.Background(), body)
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(gemini.body, &request); err != nil {
+		t.Fatalf("failed to decode captured body: %v", err)
+	}
+
+	expectedModel, err := json.Marshal(models.Registry["gemini-flash"].Name)
+	if err != nil {
+		t.Fatalf("failed to marshal expected model: %v", err)
+	}
+	assertRawJSONEqual(t, request["model"], expectedModel)
+	assertRawJSONEqual(t, request["stream"], []byte(`true`))
+}
+
 func TestChatPreservesAssistantToolCalls(t *testing.T) {
 	gemini := &captureProvider{}
 	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))

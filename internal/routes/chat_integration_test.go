@@ -145,6 +145,55 @@ func TestChatCompletionsHTTPPassesThroughToolCallHistory(t *testing.T) {
 	assertRawJSONEqual(t, upstream["messages"], expectedMessages)
 }
 
+func TestChatCompletionsHTTPPassesThroughStreamingSSE(t *testing.T) {
+	fakeGemini := &httpCaptureProvider{
+		statusCode: http.StatusOK,
+		headers: http.Header{
+			"Content-Type":      []string{"text/event-stream"},
+			"Cache-Control":     []string{"no-cache"},
+			"Transfer-Encoding": []string{"chunked"},
+			"Connection":        []string{"keep-alive"},
+		},
+		response: []byte("data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n" +
+			"data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n" +
+			"data: [DONE]\n\n"),
+	}
+
+	handler := newTestRouter(fakeGemini)
+	requestBody := []byte(`{
+		"model":"gemini-flash",
+		"messages":[{"role":"user","content":"Say hello."}],
+		"stream":true
+	}`)
+
+	response := postChatCompletion(t, handler, requestBody)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+	if response.Header().Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("expected SSE content type to be proxied, got %q", response.Header().Get("Content-Type"))
+	}
+	if response.Header().Get("Cache-Control") != "no-cache" {
+		t.Fatalf("expected cache-control to be proxied, got %q", response.Header().Get("Cache-Control"))
+	}
+	if response.Header().Get("Transfer-Encoding") != "" {
+		t.Fatalf("expected transfer-encoding hop-by-hop header to be stripped, got %q", response.Header().Get("Transfer-Encoding"))
+	}
+	if response.Header().Get("Connection") != "" {
+		t.Fatalf("expected connection hop-by-hop header to be stripped, got %q", response.Header().Get("Connection"))
+	}
+	if response.Body.String() != string(fakeGemini.response) {
+		t.Fatalf("expected SSE body %q, got %q", fakeGemini.response, response.Body.String())
+	}
+
+	var upstream map[string]json.RawMessage
+	if err := json.Unmarshal(fakeGemini.body, &upstream); err != nil {
+		t.Fatalf("failed to decode captured upstream body: %v", err)
+	}
+	assertRawJSONEqual(t, upstream["stream"], []byte(`true`))
+}
+
 func newTestRouter(gemini providers.Provider) http.Handler {
 	router := chi.NewRouter()
 	service := services.NewAIService(providers.NewProviderRouter(gemini, &httpCaptureProvider{}))
