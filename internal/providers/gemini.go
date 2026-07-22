@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/jakuninoleg/Go-Ai/internal/config"
 )
@@ -22,6 +23,9 @@ func (g *GeminiProvider) Chat(
 	ctx context.Context,
 	body []byte,
 ) (*http.Response, error) {
+	if strings.TrimSpace(g.cfg.APIKey) == "" {
+		return nil, MissingAPIKeyError{Provider: "gemini"}
+	}
 
 	req, err := http.NewRequestWithContext(
 		ctx,

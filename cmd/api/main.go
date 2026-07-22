@@ -10,6 +10,7 @@ import (
 	"github.com/jakuninoleg/Go-Ai/internal/config"
 	"github.com/jakuninoleg/Go-Ai/internal/providers"
 	"github.com/jakuninoleg/Go-Ai/internal/routes"
+	"github.com/jakuninoleg/Go-Ai/internal/services"
 )
 
 func main() {
@@ -29,6 +30,10 @@ func main() {
 		openRouterProvider,
 	)
 
+	aiService := services.NewAIService(
+		aiProvider,
+	)
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)
@@ -36,7 +41,8 @@ func main() {
 
 	routes.Register(
 		r,
-		aiProvider,
+		aiService,
+		cfg.SharedSecret,
 	)
 
 	port := ":" + cfg.Port

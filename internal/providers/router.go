@@ -1,40 +1,39 @@
 package providers
 
 import (
-	"context"
-	"net/http"
+	"fmt"
+	"strings"
 )
 
 type ProviderRouter struct {
-	primary  Provider
-	fallback Provider
+	gemini     Provider
+	openRouter Provider
 }
 
 func NewProviderRouter(
-	primary Provider,
-	fallback Provider,
+	gemini Provider,
+	openRouter Provider,
 ) *ProviderRouter {
 
 	return &ProviderRouter{
-		primary:  primary,
-		fallback: fallback,
+		gemini:     gemini,
+		openRouter: openRouter,
 	}
 }
 
-func (r *ProviderRouter) Chat(
-	ctx context.Context,
-	body []byte,
-) (*http.Response, error) {
+func (r *ProviderRouter) Resolve(
+	providerName string,
+) (Provider, error) {
 
-	resp, err := r.primary.Chat(ctx, body)
+	switch strings.ToLower(providerName) {
 
-	if err == nil && resp.StatusCode < 500 {
-		return resp, nil
+	case "openrouter":
+		return r.openRouter, nil
+
+	case "gemini":
+		return r.gemini, nil
+
+	default:
+		return nil, fmt.Errorf("unknown provider: %s", providerName)
 	}
-
-	if resp != nil {
-		resp.Body.Close()
-	}
-
-	return r.fallback.Chat(ctx, body)
 }
