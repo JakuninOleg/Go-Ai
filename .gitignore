@@ -27,3 +27,6 @@ Thumbs.db
 
 # Dependencies (если vendor)
 vendor/
+
+CLAUDE.md
+.claude
