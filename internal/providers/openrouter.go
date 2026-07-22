@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/jakuninoleg/Go-Ai/internal/config"
 )
@@ -22,6 +23,9 @@ func (p *OpenRouterProvider) Chat(
 	ctx context.Context,
 	body []byte,
 ) (*http.Response, error) {
+	if strings.TrimSpace(p.cfg.APIKey) == "" {
+		return nil, MissingAPIKeyError{Provider: "openrouter"}
+	}
 
 	req, err := http.NewRequestWithContext(
 		ctx,
