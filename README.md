@@ -19,6 +19,7 @@ The current MVP uses Gemini as the default provider, can fall back to OpenRouter
 - [x] Tool-calling payload pass-through without server-side tool execution.
 - [x] Provider model discovery with an in-memory refresh interval.
 - [x] Protected model/routing status endpoint at `GET /v1/models`.
+- [x] Safe stdout JSON logs, request IDs, diagnostic headers, and protected in-memory metrics at `GET /v1/status`.
 - [x] Docker, Fly.io, and Render deployment configuration.
 - [x] CI for formatting, tests, and `go vet`.
 
@@ -154,10 +155,12 @@ Go-Ai does not fall back for invalid client requests, unknown aliases, missing p
 
 Successful chat responses include diagnostic headers:
 
+- `X-Request-ID`
 - `X-Go-Ai-Model-Alias`
 - `X-Go-Ai-Provider`
 - `X-Go-Ai-Upstream-Model`
 - `X-Go-Ai-Fallback-Used`
+- `X-Go-Ai-Duration-Ms`
 
 Inspect model routing status:
 
@@ -167,6 +170,25 @@ curl http://localhost:8080/v1/models \
 ```
 
 Go-Ai refreshes an in-memory provider model catalog on startup and then every hour by default. Discovery failures are logged as warnings and do not prevent the app from starting; the static alias registry remains the safe baseline. Redis is intentionally not required for the MVP.
+
+## Observability
+
+Go-Ai writes safe structured JSON logs to stdout. On Fly.io these logs are collected by the platform and can be inspected with:
+
+```sh
+fly logs -a go-ai-i8r-lg
+```
+
+Chat completion logs include metadata such as `request_id`, method, path, status, duration, local model alias, selected provider, upstream model, fallback flag, streaming flag, and error type when applicable. They intentionally do not include request/response bodies, prompts, messages, tool arguments, `Authorization` headers, provider keys, or `.env` values.
+
+Protected runtime metrics are available at:
+
+```sh
+curl http://localhost:8080/v1/status \
+  -H "Authorization: Bearer <GO_AI_SHARED_SECRET>"
+```
+
+The response is a safe in-memory snapshot with uptime, totals for requests/successes/errors/auth failures/fallbacks/streaming requests, provider counters, status-code counters, and the last request timestamp. These metrics are per process and reset on restart; with multiple Fly machines they are not shared or persisted across machines.
 
 ## Streaming
 
