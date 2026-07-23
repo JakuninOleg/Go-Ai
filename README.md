@@ -3,7 +3,7 @@
 [![CI](https://github.com/JakuninOleg/Go-Ai/actions/workflows/ci.yml/badge.svg)](https://github.com/JakuninOleg/Go-Ai/actions/workflows/ci.yml)
 [![Deploy to Fly.io](https://github.com/JakuninOleg/Go-Ai/actions/workflows/fly-deploy.yml/badge.svg)](https://github.com/JakuninOleg/Go-Ai/actions/workflows/fly-deploy.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8?logo=go)](go.mod)
+[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](go.mod)
 
 Go-Ai is a small OpenAI-compatible AI gateway written in Go for Next.js apps and other server-side clients. It exposes a familiar `/v1/chat/completions` endpoint, keeps provider secrets server-side, resolves local model aliases, and proxies requests to upstream LLM providers.
 
@@ -24,6 +24,8 @@ The current MVP uses Gemini as the default provider, can fall back to OpenRouter
 - [x] CI for formatting, tests, and `go vet`.
 
 ## Architecture
+
+For the boundary this project intentionally keeps, see [Design principles](docs/design-principles.md).
 
 ```mermaid
 flowchart LR
@@ -228,7 +230,7 @@ sequenceDiagram
     Provider-->>App: Final assistant response via Go-Ai
 ```
 
-For a Next-focused integration guide with auth, fetch examples, HTTP/SSE streaming, tool-calling flow, and voice-input guidance, see [docs/next-client.md](docs/next-client.md).
+For a Next-focused integration guide with auth, fetch examples, HTTP/SSE streaming, tool-calling flow, and voice-input guidance, see [docs/next-client.md](docs/next-client.md). For copyable route-handler snippets, see [examples/next-route-handler](examples/next-route-handler).
 
 ## Fallback behavior
 
@@ -321,6 +323,8 @@ Render provides `PORT` automatically for web services, and the API already liste
 - Consider shared cache/state only if multi-instance model discovery or rate limiting requires it.
 - Add release/versioning guidance for public deployments.
 - Keep the tool-calling boundary focused on pass-through compatibility, not server-side execution.
+
+See the draft [v0.1.0 release notes](docs/releases/v0.1.0.md) for the current public baseline.
 
 ## Contributing and security
 

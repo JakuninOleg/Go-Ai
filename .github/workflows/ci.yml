@@ -36,3 +36,6 @@ jobs:
 
       - name: Run go vet
         run: go vet ./...
+
+      - name: Build Docker image
+        run: docker build -t go-ai:ci .
