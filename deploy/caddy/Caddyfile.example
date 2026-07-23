@@ -1,0 +1,8 @@
+go-ai.example.com {
+	reverse_proxy localhost:8080
+}
+
+# If Caddy runs in the same Docker Compose network as Go-Ai, use this instead:
+# go-ai.example.com {
+# 	reverse_proxy go-ai:8080
+# }

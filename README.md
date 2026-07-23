@@ -22,7 +22,7 @@ If you only need the minimum, call `/v1/chat/completions` from your backend with
 - [x] Provider model discovery with an in-memory refresh interval.
 - [x] Protected model/routing status endpoint at `GET /v1/models`.
 - [x] Safe stdout JSON logs, request IDs, diagnostic headers, and protected in-memory metrics at `GET /v1/status`.
-- [x] Docker, Fly.io, and Render deployment configuration.
+- [x] Docker, Docker Compose, Fly.io, and Render deployment configuration.
 - [x] CI for formatting, tests, and `go vet`.
 
 ## Architecture
@@ -316,6 +316,10 @@ docker run --rm \
   -e GEMINI_API_KEY=your-gemini-key \
   go-ai:local
 ```
+
+### Deploy on a VPS with Docker Compose
+
+Fly.io and Render are optional conveniences; Go-Ai can run on any Docker-capable host. For a simple self-hosted setup with `docker compose`, `.env` configuration, logs, firewall notes, and optional Caddy HTTPS, see [docs/deploy-vps.md](docs/deploy-vps.md).
 
 ### Fly.io
 
