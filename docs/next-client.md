@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     },
     body: JSON.stringify({
       messages,
-      // If model is omitted, Go-Ai uses the default Gemini alias.
+      // If model is omitted, Go-Ai uses the default local alias.
     }),
   });
 
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 }
 ```
 
-Request body with the default Gemini model:
+Request body with the default local model alias:
 
 ```json
 {
@@ -87,7 +87,32 @@ Request body with an explicit local model alias:
 }
 ```
 
-Go-Ai resolves local aliases to provider-specific model names before forwarding the request upstream.
+Go-Ai resolves local aliases to provider-specific model names before forwarding the request upstream. Next applications should keep using aliases such as `default` or omit `model`; they should not know or store real provider model slugs.
+
+## Model fallback and status
+
+The `default` alias is backed by ordered provider candidates. Go-Ai tries the primary Gemini candidate first and can fall back to a conservative OpenRouter free candidate when the failure is likely temporary:
+
+- network error or timeout before an upstream response is received;
+- upstream HTTP `429`, `500`, `502`, `503`, or `504`.
+
+Go-Ai does not fall back for unknown aliases, invalid JSON, missing provider API keys, or upstream client/auth errors such as `400`, `401`, and `403`. If all candidates fail, the final upstream error response is returned when possible. This is best-effort resilience, not a 100% availability guarantee: all providers can still be down, out of quota, misconfigured, or reject an invalid request.
+
+Successful responses include safe diagnostic headers that can help server-side debugging:
+
+- `X-Go-Ai-Model-Alias`
+- `X-Go-Ai-Provider`
+- `X-Go-Ai-Upstream-Model`
+- `X-Go-Ai-Fallback-Used`
+
+Go-Ai also refreshes its in-memory provider model catalog on startup and then hourly by default. No Redis is required for this MVP: Fly instances can keep a local catalog, and the static alias registry remains the safe fallback if discovery fails. Redis may make sense later for multi-instance shared state, rate limits, or cross-instance cache coordination.
+
+The protected status endpoint shows aliases, candidates, discovered provider models, and refresh status:
+
+```sh
+curl https://go-ai-i8r-lg.fly.dev/v1/models \
+  -H "Authorization: Bearer <GO_AI_SHARED_SECRET>"
+```
 
 ## Tool calling: Variant A flow
 
@@ -163,7 +188,7 @@ Follow-up request after the model asks for a tool:
 
 Go-Ai supports streaming as HTTP/SSE pass-through on the same endpoint: `POST /v1/chat/completions`. This is not a WebSocket flow. Send `stream: true` in the OpenAI-compatible request body and read the response as a stream.
 
-Go-Ai does not parse or modify SSE chunks. It resolves the local model alias, forwards the request upstream, then proxies the upstream status, headers, and body back to the caller. Streaming tool calls may arrive split across multiple SSE chunks, so your Next app or browser UI must assemble partial deltas before executing or displaying structured tool-call data. Tool execution still stays in the client/Next application; Go-Ai only passes payloads through.
+Go-Ai does not parse or modify SSE chunks. It resolves the local model alias, forwards the request upstream, then proxies the upstream status, headers, and body back to the caller. Fallback can happen only if the upstream returns a retryable status before Go-Ai starts proxying the response body; once streaming body chunks are being sent to the client, Go-Ai cannot transparently switch to another stream. Streaming tool calls may arrive split across multiple SSE chunks, so your Next app or browser UI must assemble partial deltas before executing or displaying structured tool-call data. Tool execution still stays in the client/Next application; Go-Ai only passes payloads through.
 
 Quick deployed smoke test with curl:
 
