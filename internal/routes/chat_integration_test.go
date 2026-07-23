@@ -194,6 +194,47 @@ func TestChatCompletionsHTTPPassesThroughStreamingSSE(t *testing.T) {
 	assertRawJSONEqual(t, upstream["stream"], []byte(`true`))
 }
 
+func TestModelsEndpointRequiresAuthAndReturnsSafeStatus(t *testing.T) {
+	fakeGemini := &httpCaptureProvider{
+		statusCode: http.StatusOK,
+		headers:    make(http.Header),
+		response:   []byte(`{"ok":true}`),
+	}
+	handler := newTestRouter(fakeGemini)
+
+	unauthorizedRequest := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	unauthorizedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(unauthorizedResponse, unauthorizedRequest)
+	if unauthorizedResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized status %d, got %d", http.StatusUnauthorized, unauthorizedResponse.Code)
+	}
+
+	authorizedRequest := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	authorizedRequest.Header.Set("Authorization", "Bearer test-secret")
+	authorizedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(authorizedResponse, authorizedRequest)
+	if authorizedResponse.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, authorizedResponse.Code)
+	}
+
+	var payload struct {
+		DefaultAlias string `json:"default_alias"`
+		Aliases      map[string][]struct {
+			Provider string `json:"provider"`
+			Model    string `json:"model"`
+		} `json:"aliases"`
+	}
+	if err := json.Unmarshal(authorizedResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode models response: %v", err)
+	}
+	if payload.DefaultAlias != models.DefaultModelAlias {
+		t.Fatalf("expected default alias %q, got %q", models.DefaultModelAlias, payload.DefaultAlias)
+	}
+	if len(payload.Aliases[models.DefaultModelAlias]) < 2 {
+		t.Fatalf("expected default alias fallback candidates, got %#v", payload.Aliases[models.DefaultModelAlias])
+	}
+}
+
 func newTestRouter(gemini providers.Provider) http.Handler {
 	router := chi.NewRouter()
 	service := services.NewAIService(providers.NewProviderRouter(gemini, &httpCaptureProvider{}))

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -32,6 +33,13 @@ func main() {
 
 	aiService := services.NewAIService(
 		aiProvider,
+	)
+	aiService.StartProviderModelCatalogRefresh(
+		context.Background(),
+		cfg.ModelRefreshInterval,
+		func(err error) {
+			fmt.Printf("model catalog refresh warning: %v\n", err)
+		},
 	)
 
 	r := chi.NewRouter()

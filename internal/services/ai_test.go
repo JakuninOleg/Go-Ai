@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -23,6 +24,34 @@ func (p *captureProvider) Chat(_ context.Context, body []byte) (*http.Response, 
 		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(bytes.NewReader([]byte(`{"ok":true}`))),
+	}, nil
+}
+
+type sequenceProvider struct {
+	calls     int
+	bodies    [][]byte
+	responses []providerResult
+}
+
+type providerResult struct {
+	status int
+	body   string
+	err    error
+}
+
+func (p *sequenceProvider) Chat(_ context.Context, body []byte) (*http.Response, error) {
+	p.calls++
+	p.bodies = append(p.bodies, append([]byte(nil), body...))
+
+	result := p.responses[p.calls-1]
+	if result.err != nil {
+		return nil, result.err
+	}
+
+	return &http.Response{
+		StatusCode: result.status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewReader([]byte(result.body))),
 	}, nil
 }
 
@@ -168,6 +197,165 @@ func TestChatPreservesToolRoleMessage(t *testing.T) {
 	}
 
 	assertRawJSONEqual(t, request["messages"], []byte(`[{"role":"tool","tool_call_id":"call_123","content":"{\"temperature\":\"-5 C\"}"}]`))
+}
+
+func TestChatDoesNotFallbackWhenPrimarySucceeds(t *testing.T) {
+	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"gemini"}`}}}
+	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
+	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+
+	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if gemini.calls != 1 {
+		t.Fatalf("expected primary provider to be called once, got %d", gemini.calls)
+	}
+	if openRouter.calls != 0 {
+		t.Fatalf("expected fallback provider not to be called, got %d", openRouter.calls)
+	}
+	if resp.Header.Get("X-Go-Ai-Fallback-Used") != "false" {
+		t.Fatalf("expected fallback header false, got %q", resp.Header.Get("X-Go-Ai-Fallback-Used"))
+	}
+}
+
+func TestChatFallbacksOnPrimary503(t *testing.T) {
+	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusServiceUnavailable, body: `{"error":"high demand"}`}}}
+	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
+	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+
+	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected fallback status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if resp.Header.Get("X-Go-Ai-Fallback-Used") != "true" {
+		t.Fatalf("expected fallback header true, got %q", resp.Header.Get("X-Go-Ai-Fallback-Used"))
+	}
+	if resp.Header.Get("X-Go-Ai-Provider") != models.ProviderOpenRouter {
+		t.Fatalf("expected openrouter provider header, got %q", resp.Header.Get("X-Go-Ai-Provider"))
+	}
+}
+
+func TestChatFallbacksOnPrimary429(t *testing.T) {
+	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusTooManyRequests, body: `{"error":"rate limited"}`}}}
+	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
+	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+
+	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected fallback status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if openRouter.calls != 1 {
+		t.Fatalf("expected fallback provider call, got %d", openRouter.calls)
+	}
+}
+
+func TestChatDoesNotFallbackOnPrimary400(t *testing.T) {
+	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusBadRequest, body: `{"error":"bad request"}`}}}
+	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
+	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+
+	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected primary status %d, got %d", http.StatusBadRequest, resp.StatusCode)
+	}
+	if openRouter.calls != 0 {
+		t.Fatalf("expected fallback provider not to be called, got %d", openRouter.calls)
+	}
+}
+
+func TestChatFallbacksOnPrimaryNetworkError(t *testing.T) {
+	gemini := &sequenceProvider{responses: []providerResult{{err: errors.New("network timeout")}}}
+	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
+	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+
+	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected fallback status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if resp.Header.Get("X-Go-Ai-Fallback-Used") != "true" {
+		t.Fatalf("expected fallback header true, got %q", resp.Header.Get("X-Go-Ai-Fallback-Used"))
+	}
+}
+
+func TestChatReturnsFinalRetryableResponseWhenAllCandidatesFail(t *testing.T) {
+	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusServiceUnavailable, body: `{"error":"high demand"}`}}}
+	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusGatewayTimeout, body: `{"error":"timeout"}`}}}
+	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+
+	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		t.Fatalf("expected final upstream status %d, got %d", http.StatusGatewayTimeout, resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read final response body: %v", err)
+	}
+	if string(body) != `{"error":"timeout"}` {
+		t.Fatalf("expected final response body, got %s", body)
+	}
+}
+
+func TestChatFallbackPreservesToolCallingAndStreamingFields(t *testing.T) {
+	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusServiceUnavailable, body: `{"error":"high demand"}`}}}
+	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
+	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+
+	body := []byte(`{
+		"messages":[
+			{"role":"assistant","content":null,"tool_calls":[{"id":"call_123","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Moscow\"}"}}]},
+			{"role":"tool","tool_call_id":"call_123","content":"{\"temperature\":\"-5 C\"}"}
+		],
+		"tools":[{"type":"function","function":{"name":"get_weather","parameters":{"type":"object"}}}],
+		"tool_choice":"auto",
+		"stream":true
+	}`)
+
+	resp, err := service.Chat(context.Background(), body)
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(openRouter.bodies[0], &request); err != nil {
+		t.Fatalf("failed to decode fallback body: %v", err)
+	}
+
+	assertRawJSONEqual(t, request["stream"], []byte(`true`))
+	assertRawJSONEqual(t, request["tool_choice"], []byte(`"auto"`))
+	assertRawJSONEqual(t, request["tools"], []byte(`[{"type":"function","function":{"name":"get_weather","parameters":{"type":"object"}}}]`))
+	assertRawJSONEqual(t, request["messages"], []byte(`[
+		{"role":"assistant","content":null,"tool_calls":[{"id":"call_123","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Moscow\"}"}}]},
+		{"role":"tool","tool_call_id":"call_123","content":"{\"temperature\":\"-5 C\"}"}
+	]`))
 }
 
 func TestChatReturnsUnknownModelError(t *testing.T) {
