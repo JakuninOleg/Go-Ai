@@ -38,6 +38,24 @@ Health check:
 curl http://localhost:8080/health
 ```
 
+## Fly.io deployment
+
+The production Fly app is `go-ai-i8r-lg` and is configured in `fly.toml` to build from the project `Dockerfile` and serve the API on port `8080`.
+
+Runtime secrets stay in Fly, not in GitHub Actions. Configure them with Fly secrets before serving traffic:
+
+- `GO_AI_SHARED_SECRET`
+- `GEMINI_API_KEY`
+- `OPENROUTER_API_KEY` if OpenRouter models are used
+
+GitHub Actions deploys to Fly on pushes to `main` and can also be started manually from the Actions tab. To enable it, create a Fly deploy token for the app with `flyctl` or the Fly dashboard, then add it to the GitHub repository:
+
+1. Create a deploy token scoped to `go-ai-i8r-lg`, for example with `fly tokens create deploy -a go-ai-i8r-lg`.
+2. In GitHub, open repository Settings -> Secrets and variables -> Actions.
+3. Add a new repository secret named `FLY_API_TOKEN` with the deploy token value.
+
+Do not put provider API keys or `GO_AI_SHARED_SECRET` in the GitHub workflow; keep those values in Fly secrets.
+
 ## Tool calling compatibility
 
 Go-Ai supports tool-calling payloads as an OpenAI-compatible proxy and model router. It does not execute tools itself: tool execution stays in client applications, such as Next apps.
