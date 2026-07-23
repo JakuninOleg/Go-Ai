@@ -12,7 +12,7 @@ go test ./...
 go vet ./...
 ```
 
-If you add or change model alias behavior, update the related tests in `internal/models` and `internal/services`.
+If you add or change model alias behavior, update the related tests in `internal/models` and `internal/services`. For the expected alias, fallback, and provider-extension flow, see [Adding models and providers](docs/adding-models.md).
 
 ## Security and privacy
 
@@ -28,6 +28,7 @@ Tool execution intentionally belongs to calling applications or services because
 
 ## Adding providers or models
 
+- Start with [Adding models and providers](docs/adding-models.md) before changing the registry or provider router.
 - Prefer local model aliases over exposing provider model slugs to clients.
 - Add provider-specific code under `internal/providers` and wire it through the provider router rather than special-casing handlers.
 - Keep successful upstream OpenAI-compatible request/response proxying intact.

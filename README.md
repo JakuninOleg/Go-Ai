@@ -9,6 +9,8 @@ Go-Ai is a small OpenAI-compatible AI gateway written in Go for applications and
 
 The current MVP uses Gemini as the default provider, can fall back to OpenRouter for retryable failures, supports HTTP/SSE streaming pass-through, and keeps tool execution in the application layer where business context belongs.
 
+v0.1 intentionally starts with Gemini and OpenRouter only: Gemini is the default provider this gateway was built around, and OpenRouter gives a broad fallback/aggregator path through one OpenAI-compatible API. See [Adding models and providers](docs/adding-models.md) for the extension path and caveats.
+
 If you only need the minimum, call `/v1/chat/completions` from your backend with `Authorization: Bearer <GO_AI_SHARED_SECRET>`. Next.js examples are included because this repo often targets server-side web apps, but any backend or HTTP client can call Go-Ai.
 
 ## Features
@@ -22,7 +24,7 @@ If you only need the minimum, call `/v1/chat/completions` from your backend with
 - [x] Provider model discovery with an in-memory refresh interval.
 - [x] Protected model/routing status endpoint at `GET /v1/models`.
 - [x] Safe stdout JSON logs, request IDs, diagnostic headers, and protected in-memory metrics at `GET /v1/status`.
-- [x] Docker, Fly.io, and Render deployment configuration.
+- [x] Docker, Docker Compose, Fly.io, and Render deployment configuration.
 - [x] CI for formatting, tests, and `go vet`.
 
 ## Architecture
@@ -161,6 +163,13 @@ export async function askGoAi(messages: ChatMessage[]) {
 
 For a copyable minimal helper, see [examples/minimal-http-client](examples/minimal-http-client). For an advanced Next.js route-handler example with streaming and a tool-calling skeleton, see [examples/next-route-handler](examples/next-route-handler).
 
+## Documentation
+
+- [Deploy on a VPS with Docker Compose](docs/deploy-vps.md) covers `docker-compose.yml`, `.env` setup, logs, firewall notes, and optional Caddy HTTPS.
+- [Adding models and providers](docs/adding-models.md) explains local aliases, fallback ordering, provider wiring, capability caveats, and why v0.1 stays focused on Gemini plus OpenRouter.
+- [Next.js client integration](docs/next-client.md) shows server-side usage patterns, streaming, and tool-calling pass-through from a Next app.
+- [Design principles](docs/design-principles.md) describes the gateway boundary and non-goals.
+
 ## Configuration
 
 The service reads configuration from environment variables and an optional local `.env` file:
@@ -209,6 +218,8 @@ curl http://localhost:8080/v1/models \
 ```
 
 Go-Ai refreshes an in-memory provider model catalog on startup and then every hour by default. Discovery failures are logged as warnings and do not prevent the app from starting; the static alias registry remains the safe baseline. Redis is intentionally not required for the MVP.
+
+To add aliases, adjust fallback candidates, or wire a new provider, follow [Adding models and providers](docs/adding-models.md).
 
 ## Observability
 
@@ -296,7 +307,15 @@ This project intentionally keeps a narrower boundary:
 
 The tradeoff is intentional: Go-Ai provides a focused gateway layer, not a full LLM orchestration platform.
 
+## Why only Gemini and OpenRouter in v0.1?
+
+Provider coverage is intentionally small for the first public baseline. Gemini is the default because it is the primary provider Go-Ai was built around for personal server-side apps and has an OpenAI-compatible endpoint. OpenRouter is included as a fallback and aggregator because it can route to many models through one OpenAI-compatible API and can provide free or low-cost fallback candidates.
+
+Keeping the provider set narrow makes the release easier to test and keeps the project honest about its scope. Go-Ai is a focused gateway, not a universal provider marketplace. More providers can be added through the documented provider interface when they have a clear use case and tests. See [Adding models and providers](docs/adding-models.md).
+
 ## Deployment
+
+Go-Ai can be deployed with the included `Dockerfile`, `docker-compose.yml`, Fly.io config, or Render config. For a self-hosted Linux VPS, the recommended project guide is [Deploy on a VPS with Docker Compose](docs/deploy-vps.md), including the optional Caddy reverse-proxy example in [`deploy/caddy/Caddyfile.example`](deploy/caddy/Caddyfile.example).
 
 ### Docker
 
@@ -316,6 +335,10 @@ docker run --rm \
   -e GEMINI_API_KEY=your-gemini-key \
   go-ai:local
 ```
+
+### Deploy on a VPS with Docker Compose
+
+Fly.io and Render are optional conveniences; Go-Ai can run on any Docker-capable host. For a simple self-hosted setup with `docker compose`, `.env` configuration, logs, firewall notes, and optional Caddy HTTPS, see [docs/deploy-vps.md](docs/deploy-vps.md).
 
 ### Fly.io
 
@@ -356,6 +379,7 @@ Render provides `PORT` automatically for web services, and the API already liste
 ## Roadmap
 
 - Expand provider coverage while preserving local aliases.
+- Consider a file/env-based alias registry after the code registry has proven too rigid for real deployments.
 - Add more explicit provider health and fallback diagnostics.
 - Consider shared cache/state only if multi-instance model discovery or rate limiting requires it.
 - Add release/versioning guidance for public deployments.

@@ -52,6 +52,14 @@ Client apps should depend on local aliases such as `default` or `gemini-flash`, 
 
 Changing alias behavior should be treated as a compatibility change and covered by tests.
 
+For the practical extension workflow, see [Adding models and providers](adding-models.md).
+
+## Provider scope in v0.1
+
+v0.1 intentionally supports a small provider set: Gemini as the default provider and OpenRouter as the fallback/aggregator route. That keeps the first release readable, testable, and honest about what it has actually been built to support.
+
+Provider expansion is welcome when it preserves the gateway boundary: provider-specific code belongs in `internal/providers`, aliases stay in the local registry, and successful upstream responses remain proxied without handler-level special cases.
+
 ## Non-goals
 
 Go-Ai intentionally does not include:

@@ -1,0 +1,8 @@
+services:
+  go-ai:
+    build: .
+    container_name: go-ai
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080"
