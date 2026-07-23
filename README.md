@@ -3,17 +3,19 @@
 [![CI](https://github.com/JakuninOleg/Go-Ai/actions/workflows/ci.yml/badge.svg)](https://github.com/JakuninOleg/Go-Ai/actions/workflows/ci.yml)
 [![Deploy to Fly.io](https://github.com/JakuninOleg/Go-Ai/actions/workflows/fly-deploy.yml/badge.svg)](https://github.com/JakuninOleg/Go-Ai/actions/workflows/fly-deploy.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8?logo=go)](go.mod)
+[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](go.mod)
 
-Go-Ai is a small OpenAI-compatible AI gateway written in Go for Next.js apps and other server-side clients. It exposes a familiar `/v1/chat/completions` endpoint, keeps provider secrets server-side, resolves local model aliases, and proxies requests to upstream LLM providers.
+Go-Ai is a small OpenAI-compatible AI gateway written in Go for applications and services. It exposes a familiar `/v1/chat/completions` endpoint, keeps provider secrets behind your backend, resolves local model aliases, and proxies requests to upstream LLM providers.
 
 The current MVP uses Gemini as the default provider, can fall back to OpenRouter for retryable failures, supports HTTP/SSE streaming pass-through, and keeps tool execution in the application layer where business context belongs.
+
+If you only need the minimum, call `/v1/chat/completions` from your backend with `Authorization: Bearer <GO_AI_SHARED_SECRET>`. Next.js examples are included because this repo often targets server-side web apps, but any backend or HTTP client can call Go-Ai.
 
 ## Features
 
 - [x] OpenAI-compatible `POST /v1/chat/completions` endpoint.
 - [x] Bearer auth with `GO_AI_SHARED_SECRET` for protected routes.
-- [x] Local model aliases so client apps do not depend on provider model slugs.
+- [x] Local model aliases so client code does not depend on provider model slugs.
 - [x] Gemini-first routing with OpenRouter fallback for retryable upstream failures.
 - [x] HTTP/SSE streaming pass-through with `stream: true`.
 - [x] Tool-calling payload pass-through without server-side tool execution.
@@ -25,9 +27,11 @@ The current MVP uses Gemini as the default provider, can fall back to OpenRouter
 
 ## Architecture
 
+For the boundary this project intentionally keeps, see [Design principles](docs/design-principles.md).
+
 ```mermaid
 flowchart LR
-    Client[Next.js app or server client] -->|OpenAI-compatible request| API[Go-Ai HTTP API]
+    Client[Application, service, or backend] -->|OpenAI-compatible request| API[Go-Ai HTTP API]
     API --> Auth[Bearer auth]
     Auth --> Service[Chat service]
     Service --> Registry[Local model aliases]
@@ -52,7 +56,7 @@ Core package boundaries:
 
 ```mermaid
 sequenceDiagram
-    participant App as Next.js app
+    participant App as Application backend
     participant Gateway as Go-Ai
     participant Models as Alias registry
     participant Provider as LLM provider
@@ -101,6 +105,10 @@ go test ./...
 go run ./cmd/api
 ```
 
+## Minimal HTTP integration
+
+Use this shape from trusted server-side code: a backend route, worker, CLI, or internal service. Do not put `GO_AI_SHARED_SECRET` in browser code.
+
 Health check:
 
 ```sh
@@ -121,6 +129,37 @@ curl http://localhost:8080/v1/chat/completions \
 ```
 
 If `model` is omitted, Go-Ai uses the default local alias.
+
+Tiny TypeScript helper:
+
+```ts
+type ChatMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | null;
+};
+
+export async function askGoAi(messages: ChatMessage[]) {
+  const baseUrl = process.env.GO_AI_BASE_URL ?? "http://localhost:8080";
+  const sharedSecret = process.env.GO_AI_SHARED_SECRET;
+
+  if (!sharedSecret) {
+    throw new Error("GO_AI_SHARED_SECRET is required");
+  }
+
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${sharedSecret}`,
+    },
+    body: JSON.stringify({ messages }),
+  });
+
+  return response.json();
+}
+```
+
+For a copyable minimal helper, see [examples/minimal-http-client](examples/minimal-http-client). For an advanced Next.js route-handler example with streaming and a tool-calling skeleton, see [examples/next-route-handler](examples/next-route-handler).
 
 ## Configuration
 
@@ -208,11 +247,11 @@ Go-Ai does not parse or rewrite SSE chunks. It resolves the local model alias, f
 
 ## Tool calling compatibility
 
-Go-Ai supports tool-calling payloads as an OpenAI-compatible proxy and model router. It does not execute tools itself: tool execution stays in client applications, such as Next apps.
+Go-Ai supports tool-calling payloads as an OpenAI-compatible proxy and model router. It does not execute tools itself: tool execution stays in the calling application or service.
 
 ```mermaid
 sequenceDiagram
-    participant App as Next.js app
+    participant App as Application backend
     participant Gateway as Go-Ai
     participant Provider as LLM provider
     participant Tool as App-owned tool
@@ -228,7 +267,7 @@ sequenceDiagram
     Provider-->>App: Final assistant response via Go-Ai
 ```
 
-For a Next-focused integration guide with auth, fetch examples, HTTP/SSE streaming, tool-calling flow, and voice-input guidance, see [docs/next-client.md](docs/next-client.md).
+For the minimal HTTP example, see [examples/minimal-http-client](examples/minimal-http-client). For a Next-focused integration guide with auth, fetch examples, HTTP/SSE streaming, tool-calling flow, and voice-input guidance, see [docs/next-client.md](docs/next-client.md).
 
 ## Fallback behavior
 
@@ -252,7 +291,7 @@ This project intentionally keeps a narrower boundary:
 
 - **Small Go runtime for tiny Fly machines.** The gateway is designed as a compact HTTP service with few moving parts.
 - **Direct SSE streaming path.** Streaming responses are proxied as HTTP/SSE without introducing an agent framework in the middle.
-- **App-owned context and RBAC.** Next.js apps keep user context, permissions, tenant checks, and business data access in the app layer.
+- **App-owned context and RBAC.** Applications keep user context, permissions, tenant checks, and business data access in the app layer.
 - **Transparent tool-calling boundary.** Go-Ai passes tool schemas and tool calls through; application code validates and executes tools where the domain logic lives.
 
 The tradeoff is intentional: Go-Ai provides a focused gateway layer, not a full LLM orchestration platform.
@@ -321,6 +360,8 @@ Render provides `PORT` automatically for web services, and the API already liste
 - Consider shared cache/state only if multi-instance model discovery or rate limiting requires it.
 - Add release/versioning guidance for public deployments.
 - Keep the tool-calling boundary focused on pass-through compatibility, not server-side execution.
+
+See the draft [v0.1.0 release notes](docs/releases/v0.1.0.md) for the current public baseline.
 
 ## Contributing and security
 
