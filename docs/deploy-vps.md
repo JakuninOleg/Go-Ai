@@ -4,6 +4,8 @@ This guide shows a simple self-hosted deployment for Go-Ai on a Linux VPS. It us
 
 Fly.io and Render are not required. Any Docker-capable Linux host can run Go-Ai.
 
+If you want this VPS instance to expose different local model aliases or provider routes, configure the deployment first and then follow [Adding models and providers](adding-models.md).
+
 ## Requirements
 
 - A Linux VPS with SSH access.
@@ -153,5 +155,6 @@ docker compose down
 
 - `curl http://localhost:8080/health` fails: check `docker compose ps` and `docker compose logs -f go-ai`.
 - Provider requests fail: verify `.env` values on the server and confirm the VPS region can reach the provider APIs.
+- A model alias is missing or points to the wrong upstream model: check the static registry and fallback order described in [Adding models and providers](adding-models.md), then rebuild the container.
 - HTTPS certificate is not issued: confirm DNS points to the VPS and ports `80` and `443` are open.
 - Chat requests return `401`: verify the backend caller sends `Authorization: Bearer <GO_AI_SHARED_SECRET>` exactly.

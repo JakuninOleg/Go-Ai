@@ -35,7 +35,7 @@ Environment variables are loaded from the process environment and local `.env` v
 - Do not commit `.env` or other local secret files.
 - Keep OpenAI-compatible request/response proxying intact for successful upstream responses.
 - Tool-calling payload compatibility is supported through pass-through proxying only. Tool execution intentionally lives in calling applications/services for now; do not add executors or business-specific tool logic inside Go-Ai.
-- Model aliases are a local contract for client apps. Update tests when changing alias behavior.
+- Model aliases are a local contract for client apps. Follow `docs/adding-models.md` and update tests when changing alias behavior.
 - Gemini/OpenRouter model slugs can change over time. Verify the model list against official provider documentation before relying on a slug for production.
 
 ## Validation
