@@ -24,7 +24,7 @@ If you add or change model alias behavior, update the related tests in `internal
 
 Go-Ai is a small OpenAI-compatible gateway and model router. Keep provider access, alias resolution, request validation, and HTTP proxy behavior inside this project.
 
-Tool execution intentionally belongs to client applications, such as Next apps, because those apps own business logic, databases, permissions, and user context. Please do not add business-specific tool executors to Go-Ai.
+Tool execution intentionally belongs to calling applications or services because they own business logic, databases, permissions, and user context. A Next app is one common client, not the only one. Please do not add business-specific tool executors to Go-Ai.
 
 ## Adding providers or models
 

@@ -72,4 +72,4 @@ Those features belong either in the application or in a broader LLM platform.
 
 LiteLLM, LangChain, and similar projects are useful when you need broad provider coverage, plugin ecosystems, tracing integrations, chains, agents, or larger orchestration surfaces.
 
-Go-Ai is deliberately smaller. It is meant to be easy to read, cheap to run, and safe to place between a Next.js app and a small set of providers. The tradeoff is clear: fewer features, fewer moving parts, and a sharper boundary. If an app needs a full orchestration framework, it should use one. If it needs a thin provider gateway with local aliases and streaming pass-through, Go-Ai should stay focused on that job.
+Go-Ai is deliberately smaller. It is meant to be easy to read, cheap to run, and safe to place between applications or client backends and a small set of providers. A Next.js app is one common client, not the only one. The tradeoff is clear: fewer features, fewer moving parts, and a sharper boundary. If an app needs a full orchestration framework, it should use one. If it needs a thin provider gateway with local aliases and streaming pass-through, Go-Ai should stay focused on that job.

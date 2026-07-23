@@ -1,6 +1,6 @@
 # Next client integration guide
 
-This guide is intended for Next applications and agents that use Go-Ai as an OpenAI-compatible chat proxy.
+This is the Next.js integration guide. Go-Ai itself is a generic HTTP/OpenAI-compatible gateway; any trusted backend or service can call it over HTTP. The examples below focus on keeping Go-Ai secrets server-side in Next route handlers and other Next server code.
 
 ## Production API
 

@@ -1,6 +1,8 @@
-# Next.js route-handler examples
+# Advanced Next.js route-handler examples
 
 These snippets show one practical way to call Go-Ai from a Next.js app without exposing gateway secrets to the browser.
+
+For the smallest integration, start with [`../minimal-http-client`](../minimal-http-client). Go-Ai itself is a generic HTTP/OpenAI-compatible gateway; this directory is an advanced Next.js example with streaming and a tool-calling skeleton.
 
 They are examples, not a complete app. Copy the files into a Next project and adapt validation, auth, and UI behavior to your product.
 
@@ -27,7 +29,7 @@ Do not prefix them with `NEXT_PUBLIC_`, and do not send `GO_AI_SHARED_SECRET` to
 - Sending a non-streaming OpenAI-compatible chat request.
 - Returning an upstream SSE body with `new Response(upstream.body, ...)`.
 - Forwarding selected diagnostic headers from Go-Ai.
-- Keeping tool execution inside Next.js while Go-Ai only proxies model requests.
+- Keeping tool execution inside the Next.js app while Go-Ai only proxies model requests.
 
 ## Browser flow
 
