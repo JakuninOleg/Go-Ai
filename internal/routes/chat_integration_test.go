@@ -5,13 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jakuninoleg/Go-Ai/internal/models"
+	"github.com/jakuninoleg/Go-Ai/internal/observability"
 	"github.com/jakuninoleg/Go-Ai/internal/providers"
 	"github.com/jakuninoleg/Go-Ai/internal/services"
 )
@@ -85,6 +88,12 @@ func TestChatCompletionsHTTPPassesThroughToolCallingRequestAndResponse(t *testin
 	if response.Header().Get("X-Provider-Request") != "provider-request-123" {
 		t.Fatalf("expected provider header to be proxied, got %q", response.Header().Get("X-Provider-Request"))
 	}
+	if response.Header().Get(observability.RequestIDHeader) == "" {
+		t.Fatal("expected generated request id header")
+	}
+	if response.Header().Get(observability.DurationHeader) == "" {
+		t.Fatal("expected duration header")
+	}
 	assertRawJSONEqual(t, response.Body.Bytes(), fakeGemini.response)
 
 	var upstream map[string]json.RawMessage
@@ -100,6 +109,34 @@ func TestChatCompletionsHTTPPassesThroughToolCallingRequestAndResponse(t *testin
 	assertRawJSONEqual(t, upstream["tools"], []byte(`[{"type":"function","function":{"name":"get_weather","description":"Get current weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}]`))
 	assertRawJSONEqual(t, upstream["tool_choice"], []byte(`"auto"`))
 	assertRawJSONEqual(t, upstream["parallel_tool_calls"], []byte(`true`))
+}
+
+func TestChatCompletionsPreservesClientRequestID(t *testing.T) {
+	fakeGemini := &httpCaptureProvider{
+		statusCode: http.StatusOK,
+		headers: http.Header{
+			observability.RequestIDHeader: []string{"upstream-request-id"},
+		},
+		response: []byte(`{"ok":true}`),
+	}
+
+	handler := newTestRouter(fakeGemini)
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader([]byte(`{
+		"messages":[{"role":"user","content":"hello"}]
+	}`)))
+	request.Header.Set("Authorization", "Bearer test-secret")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(observability.RequestIDHeader, "client-request-123")
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+	if response.Header().Get(observability.RequestIDHeader) != "client-request-123" {
+		t.Fatalf("expected client request id to be preserved, got %q", response.Header().Get(observability.RequestIDHeader))
+	}
 }
 
 func TestChatCompletionsHTTPPassesThroughToolCallHistory(t *testing.T) {
@@ -194,6 +231,91 @@ func TestChatCompletionsHTTPPassesThroughStreamingSSE(t *testing.T) {
 	assertRawJSONEqual(t, upstream["stream"], []byte(`true`))
 }
 
+func TestStatusEndpointRequiresAuthAndReturnsMetricsSnapshot(t *testing.T) {
+	fakeGemini := &httpCaptureProvider{
+		statusCode: http.StatusOK,
+		headers:    make(http.Header),
+		response:   []byte(`{"ok":true}`),
+	}
+	handler, observer, _ := newTestRouterWithObserver(fakeGemini)
+
+	unauthorizedRequest := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	unauthorizedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(unauthorizedResponse, unauthorizedRequest)
+	if unauthorizedResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized status %d, got %d", http.StatusUnauthorized, unauthorizedResponse.Code)
+	}
+
+	authorizedRequest := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	authorizedRequest.Header.Set("Authorization", "Bearer test-secret")
+	authorizedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(authorizedResponse, authorizedRequest)
+	if authorizedResponse.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, authorizedResponse.Code)
+	}
+	if authorizedResponse.Header().Get(observability.RequestIDHeader) == "" {
+		t.Fatal("expected generated request id header")
+	}
+
+	var payload observability.Snapshot
+	if err := json.Unmarshal(authorizedResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode status response: %v", err)
+	}
+	if payload.Status != "ok" {
+		t.Fatalf("expected status ok, got %q", payload.Status)
+	}
+	if observer.Metrics.Snapshot().AuthFailuresTotal != 1 {
+		t.Fatalf("expected auth failure counter 1, got %d", observer.Metrics.Snapshot().AuthFailuresTotal)
+	}
+}
+
+func TestObservabilityMetricsAndSafeChatLog(t *testing.T) {
+	fakeGemini := &httpCaptureProvider{
+		statusCode: http.StatusOK,
+		headers:    make(http.Header),
+		response:   []byte(`{"ok":true}`),
+	}
+	handler, observer, logs := newTestRouterWithObserver(fakeGemini)
+	requestBody := []byte(`{
+		"model":"gemini-flash",
+		"messages":[{"role":"user","content":"secret prompt text that must not be logged"}],
+		"stream":true
+	}`)
+
+	response := postChatCompletion(t, handler, requestBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	snapshot := observer.Metrics.Snapshot()
+	if snapshot.RequestsTotal != 1 {
+		t.Fatalf("expected requests_total 1, got %d", snapshot.RequestsTotal)
+	}
+	if snapshot.ChatRequestsTotal != 1 {
+		t.Fatalf("expected chat_requests_total 1, got %d", snapshot.ChatRequestsTotal)
+	}
+	if snapshot.SuccessTotal != 1 {
+		t.Fatalf("expected success_total 1, got %d", snapshot.SuccessTotal)
+	}
+	if snapshot.StreamingRequestsTotal != 1 {
+		t.Fatalf("expected streaming_requests_total 1, got %d", snapshot.StreamingRequestsTotal)
+	}
+	if snapshot.ProviderRequests[models.Registry[models.DefaultModelAlias].Provider] != 1 {
+		t.Fatalf("expected provider request counter, got %#v", snapshot.ProviderRequests)
+	}
+	if snapshot.StatusCodes["200"] != 1 {
+		t.Fatalf("expected status code counter, got %#v", snapshot.StatusCodes)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, `"request_id"`) {
+		t.Fatalf("expected log to include request_id, got %s", logOutput)
+	}
+	if strings.Contains(logOutput, "secret prompt text that must not be logged") {
+		t.Fatalf("expected log not to include prompt text, got %s", logOutput)
+	}
+}
+
 func TestModelsEndpointRequiresAuthAndReturnsSafeStatus(t *testing.T) {
 	fakeGemini := &httpCaptureProvider{
 		statusCode: http.StatusOK,
@@ -236,11 +358,18 @@ func TestModelsEndpointRequiresAuthAndReturnsSafeStatus(t *testing.T) {
 }
 
 func newTestRouter(gemini providers.Provider) http.Handler {
+	handler, _, _ := newTestRouterWithObserver(gemini)
+	return handler
+}
+
+func newTestRouterWithObserver(gemini providers.Provider) (http.Handler, *observability.Observer, *bytes.Buffer) {
 	router := chi.NewRouter()
 	service := services.NewAIService(providers.NewProviderRouter(gemini, &httpCaptureProvider{}))
-	Register(router, service, "test-secret")
+	logs := &bytes.Buffer{}
+	observer := observability.New(slog.New(slog.NewJSONHandler(logs, nil)))
+	Register(router, service, "test-secret", observer)
 
-	return router
+	return router, observer, logs
 }
 
 func postChatCompletion(t *testing.T, handler http.Handler, body []byte) *httptest.ResponseRecorder {

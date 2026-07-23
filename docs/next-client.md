@@ -100,10 +100,21 @@ Go-Ai does not fall back for unknown aliases, invalid JSON, missing provider API
 
 Successful responses include safe diagnostic headers that can help server-side debugging:
 
+- `X-Request-ID`
 - `X-Go-Ai-Model-Alias`
 - `X-Go-Ai-Provider`
 - `X-Go-Ai-Upstream-Model`
 - `X-Go-Ai-Fallback-Used`
+- `X-Go-Ai-Duration-Ms`
+
+Next server code can read and forward these to its own logs or error responses, for example:
+
+```ts
+const requestId = response.headers.get("X-Request-ID");
+const provider = response.headers.get("X-Go-Ai-Provider");
+const fallbackUsed = response.headers.get("X-Go-Ai-Fallback-Used");
+const durationMs = response.headers.get("X-Go-Ai-Duration-Ms");
+```
 
 Go-Ai also refreshes its in-memory provider model catalog on startup and then hourly by default. No Redis is required for this MVP: Fly instances can keep a local catalog, and the static alias registry remains the safe fallback if discovery fails. Redis may make sense later for multi-instance shared state, rate limits, or cross-instance cache coordination.
 
@@ -113,6 +124,25 @@ The protected status endpoint shows aliases, candidates, discovered provider mod
 curl https://go-ai-i8r-lg.fly.dev/v1/models \
   -H "Authorization: Bearer <GO_AI_SHARED_SECRET>"
 ```
+
+## Observability
+
+Go-Ai writes structured safe logs to stdout/stderr. On Fly.io, inspect them with:
+
+```sh
+fly logs -a go-ai-i8r-lg
+```
+
+The chat log line includes safe metadata such as request ID, route, status, duration, selected provider, upstream model, fallback flag, streaming flag, and error type. It does not log prompts, messages, request/response bodies, tool arguments, `Authorization` headers, provider keys, or `.env` values.
+
+Runtime counters are exposed through the protected status endpoint:
+
+```sh
+curl https://go-ai-i8r-lg.fly.dev/v1/status \
+  -H "Authorization: Bearer <GO_AI_SHARED_SECRET>"
+```
+
+The response contains a safe in-memory snapshot: uptime, request totals, success/error totals, auth failures, fallback and streaming counters, provider counters, status-code counters, and last request time. These metrics are per process and reset on restart; if the app runs on multiple Fly machines, each machine has its own local counters.
 
 ## Tool calling: Variant A flow
 

@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/jakuninoleg/Go-Ai/internal/config"
+	"github.com/jakuninoleg/Go-Ai/internal/observability"
 	"github.com/jakuninoleg/Go-Ai/internal/providers"
 	"github.com/jakuninoleg/Go-Ai/internal/routes"
 	"github.com/jakuninoleg/Go-Ai/internal/services"
@@ -17,6 +20,7 @@ import (
 func main() {
 
 	cfg := config.Load()
+	observer := observability.New(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	geminiProvider := providers.NewGeminiProvider(
 		cfg.Providers.Gemini,
@@ -44,13 +48,13 @@ func main() {
 
 	r := chi.NewRouter()
 
-	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
 	routes.Register(
 		r,
 		aiService,
 		cfg.SharedSecret,
+		observer,
 	)
 
 	port := ":" + cfg.Port
