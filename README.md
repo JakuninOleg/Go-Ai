@@ -10,8 +10,33 @@ The service reads configuration from environment variables and an optional local
 - `GO_AI_SHARED_SECRET` is required for protected API requests.
 - `GEMINI_API_KEY`, `GEMINI_BASE_URL` configure Gemini.
 - `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL` configure OpenRouter.
+- `MODEL_REFRESH_INTERVAL` controls provider model discovery refresh cadence and defaults to `1h`.
 
 Do not commit `.env` or real secret values.
+
+## Model aliases, fallback, and discovery
+
+Client applications should send local aliases such as `default` or omit `model` entirely. They should not depend on real provider model slugs. Go-Ai rewrites the alias to the selected upstream model before proxying the request.
+
+The `default` alias has ordered candidates. Go-Ai tries the primary Gemini model first and can fall back to a conservative OpenRouter free candidate when the upstream failure is retryable:
+
+- provider/network error before a response is received;
+- HTTP `429`, `500`, `502`, `503`, or `504` from the upstream provider.
+
+Go-Ai does not fall back for invalid client requests, unknown aliases, missing provider API keys, or upstream `400`, `401`, and `403` responses. If every candidate fails, the gateway returns the final upstream response when one exists, or a gateway error for network failures. This improves resilience, but it cannot guarantee a response when all providers are down, quota is exhausted, auth is invalid, or the request itself is invalid.
+
+Successful chat responses include diagnostic headers:
+
+- `X-Go-Ai-Model-Alias`
+- `X-Go-Ai-Provider`
+- `X-Go-Ai-Upstream-Model`
+- `X-Go-Ai-Fallback-Used`
+
+For streaming requests, fallback is only possible before Go-Ai starts proxying the upstream response body. Once an SSE stream is being sent to the client, streams are not mixed or transparently replaced.
+
+Go-Ai refreshes an in-memory provider model catalog on startup and then every hour by default. Discovery failures are logged as warnings and do not prevent the app from starting; the static alias registry remains the safe baseline. The protected `GET /v1/models` endpoint returns the configured aliases, candidates, discovered provider models, last successful refresh time, and safe discovery errors.
+
+Redis is intentionally not required for the MVP. On the current Fly setup, an in-memory hourly catalog is enough for model discovery and avoids extra infrastructure. Redis can be added later if the service needs shared state across many instances, distributed rate limits, or stronger cross-instance cache coordination.
 
 ## Docker
 
@@ -36,6 +61,13 @@ Health check:
 
 ```sh
 curl http://localhost:8080/health
+```
+
+Inspect model routing status:
+
+```sh
+curl http://localhost:8080/v1/models \
+  -H "Authorization: Bearer <GO_AI_SHARED_SECRET>"
 ```
 
 ## Fly.io deployment

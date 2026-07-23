@@ -17,3 +17,11 @@ func (e MissingAPIKeyError) Error() string {
 type Provider interface {
 	Chat(ctx context.Context, body []byte) (*http.Response, error)
 }
+
+type ModelInfo struct {
+	ID string `json:"id"`
+}
+
+type ModelLister interface {
+	ListModels(ctx context.Context) ([]ModelInfo, error)
+}

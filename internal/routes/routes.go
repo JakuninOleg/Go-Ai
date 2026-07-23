@@ -25,5 +25,10 @@ func Register(
 			"/v1/chat/completions",
 			handlers.ChatHandler(aiService),
 		)
+
+		r.Get(
+			"/v1/models",
+			handlers.ModelsHandler(aiService),
+		)
 	})
 }

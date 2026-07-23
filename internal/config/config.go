@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -12,8 +13,9 @@ type APIConfig struct {
 }
 
 type Config struct {
-	Port         string
-	SharedSecret string
+	Port                 string
+	SharedSecret         string
+	ModelRefreshInterval time.Duration
 
 	Providers struct {
 		Gemini     APIConfig
@@ -25,8 +27,9 @@ func Load() Config {
 	godotenv.Load()
 
 	return Config{
-		Port:         getEnv("PORT", "8080"),
-		SharedSecret: os.Getenv("GO_AI_SHARED_SECRET"),
+		Port:                 getEnv("PORT", "8080"),
+		SharedSecret:         os.Getenv("GO_AI_SHARED_SECRET"),
+		ModelRefreshInterval: getDurationEnv("MODEL_REFRESH_INTERVAL", time.Hour),
 
 		Providers: struct {
 			Gemini     APIConfig
@@ -49,6 +52,20 @@ func Load() Config {
 			},
 		},
 	}
+}
+
+func getDurationEnv(key string, fallback time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return fallback
+	}
+
+	return duration
 }
 
 func getEnv(key string, fallback string) string {
