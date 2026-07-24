@@ -45,6 +45,12 @@ Example shape:
 
 Use `ProviderGemini` for Gemini model slugs and `ProviderOpenRouter` for OpenRouter model slugs.
 
+## Discovery does not replace aliases
+
+Go-Ai refreshes provider model catalogs in memory on startup and at the configured `MODEL_REFRESH_INTERVAL`. Operators can inspect the static local alias registry and the discovered provider catalog through protected `GET /v1/models` with `Authorization: Bearer <GO_AI_SHARED_SECRET>`. This endpoint is local diagnostics, not an upstream OpenAI model-list pass-through.
+
+Discovery is diagnostic information, not the public app contract. For v0.1, adding or changing public model names still happens in the static alias registry. A discovered provider slug does not automatically become an alias or switch an existing alias target. Do not route an app to a newly discovered provider slug just because it appears in the catalog; first decide whether it should become an alias candidate, verify the behavior you need, and cover the alias behavior with tests.
+
 ## Add or change fallback candidates
 
 Fallback is controlled by the ordered `Candidates` list for an alias in `AliasRegistry`.
@@ -112,12 +118,6 @@ Before promoting a model alias for real use, test the behavior you plan to rely 
 - expected error shape for invalid requests or unsupported features.
 
 Go-Ai passes tool-calling payloads through, but it does not execute tools. Tool execution stays in the calling application or service.
-
-## Model discovery is not automatic routing
-
-The provider model catalog refresh helps inspect what providers currently report through `GET /v1/models`. It is useful for diagnostics and for noticing unavailable static candidates.
-
-The static alias registry remains the safe contract. Go-Ai does not blindly choose the newest or cheapest discovered model at runtime, because that would make client behavior unpredictable and hard to test.
 
 ## Future registry options
 

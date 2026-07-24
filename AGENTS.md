@@ -13,8 +13,10 @@ Go-Ai is a small Go API layer between user applications and LLM providers. The c
 
 ## Current behavior
 
-- Public route: `GET /health`.
-- Protected route: `POST /v1/chat/completions` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>`.
+- Public route: `GET /health` provides simple liveness only; it does not check provider keys, upstream providers, or the model catalog.
+- Protected route: `POST /v1/chat/completions` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>`, accepts OpenAI-compatible chat-completions JSON and HTTP/SSE streaming, resolves local aliases, and proxies upstream responses.
+- Protected route: `GET /v1/models` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>` and returns the static local alias registry plus discovered provider catalog diagnostics. It is not an upstream OpenAI pass-through, and discovery does not automatically switch alias targets.
+- Protected route: `GET /v1/status` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>` and returns a process-local runtime metrics snapshot. Metrics reset on restart and are not shared or persisted across instances.
 - If `model` is omitted, the service uses `models.DefaultModelAlias`.
 - If `model` is present but unknown, the service returns a predictable `400` JSON error instead of silently falling back.
 - Successful upstream responses are proxied with their status, headers, and body.
@@ -37,6 +39,7 @@ Environment variables are loaded from the process environment and local `.env` v
 - Tool-calling payload compatibility is supported through pass-through proxying only. Tool execution intentionally lives in calling applications/services for now; do not add executors or business-specific tool logic inside Go-Ai.
 - Model aliases are a local contract for client apps. Follow `docs/adding-models.md` and update tests when changing alias behavior.
 - Gemini/OpenRouter model slugs can change over time. Verify the model list against official provider documentation before relying on a slug for production.
+- For generated app integrations, point agents to `docs/agent-prompts/start-here.md`, `llms.txt`, and `docs/agent-integration.md` so they copy the right files, keep secrets server-side, and preserve the Go-Ai/app boundary.
 
 ## Validation
 

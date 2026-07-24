@@ -21,11 +21,22 @@ If you only need the minimum, call `/v1/chat/completions` from your backend with
 - [x] Gemini-first routing with OpenRouter fallback for retryable upstream failures.
 - [x] HTTP/SSE streaming pass-through with `stream: true`.
 - [x] Tool-calling payload pass-through without server-side tool execution.
-- [x] Provider model discovery with an in-memory refresh interval.
-- [x] Protected model/routing status endpoint at `GET /v1/models`.
+- [x] In-process provider model catalog refresh with an in-memory refresh interval.
+- [x] Protected model catalog and alias diagnostics at `GET /v1/models`.
 - [x] Safe stdout JSON logs, request IDs, diagnostic headers, and protected in-memory metrics at `GET /v1/status`.
 - [x] Docker, Docker Compose, Fly.io, and Render deployment configuration.
 - [x] CI for formatting, tests, and `go vet`.
+
+## API reference
+
+Go-Ai exposes these four routes. It is compatible with the OpenAI chat-completions request/response flow only; it does not implement the full OpenAI API.
+
+| Method and path | Auth | Purpose |
+| --- | --- | --- |
+| `GET /health` | Public | Simple liveness response. It does not check provider keys, upstream providers, or the model catalog. |
+| `POST /v1/chat/completions` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Accepts OpenAI-compatible chat-completions JSON and HTTP/SSE streaming requests. Go-Ai resolves a local model alias, then proxies the upstream response. |
+| `GET /v1/models` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Returns the local alias registry and diagnostic snapshot of the discovered provider model catalog. This is not an upstream OpenAI pass-through, and discovery never automatically changes an alias target. |
+| `GET /v1/status` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Returns a process-local runtime metrics snapshot. Metrics reset on restart and are neither shared nor persisted across instances. |
 
 ## Architecture
 
@@ -163,9 +174,25 @@ export async function askGoAi(messages: ChatMessage[]) {
 
 For a copyable minimal helper, see [examples/minimal-http-client](examples/minimal-http-client). For an advanced Next.js route-handler example with streaming and a tool-calling skeleton, see [examples/next-route-handler](examples/next-route-handler).
 
+## Using Go-Ai with coding agents
+
+Go-Ai includes concise integration guidance for coding agents such as Cursor, Claude Code, Harvi, Copilot, and similar tools. These files are meant to help an agent connect an app to Go-Ai without moving secrets or app-owned tool logic into the wrong layer:
+
+- [`llms.txt`](llms.txt) gives a short machine-readable project context and integration rules.
+- [Agent integration guide](docs/agent-integration.md) explains the HTTP contract, migration checklist, streaming, tool calling, and security boundaries.
+- [Start here](docs/agent-prompts/start-here.md) explains which files to copy into another project under `docs/go-ai/` and gives one simple prompt for the coding agent.
+- [Connect an app to Go-Ai](docs/agent-prompts/connect-go-ai.md) is a copy-paste prompt for minimal non-streaming integrations.
+- [Migrate from Vercel AI SDK](docs/agent-prompts/migrate-from-vercel-ai-sdk.md) is a copy-paste prompt for replacing provider SDK calls with Go-Ai while preserving app UI behavior.
+- [Add streaming](docs/agent-prompts/add-streaming.md) and [add tool calling](docs/agent-prompts/add-tool-calling.md) cover the two common follow-up tasks.
+
+For another project, copy the integration pack into `docs/go-ai/`, start with `docs/agent-prompts/start-here.md`, then use the relevant connect, migrate, streaming, or tool-calling prompt.
+
+The important boundary is the same for humans and agents: call Go-Ai from backend code, keep `GO_AI_SHARED_SECRET` server-side only, and execute product tools in the calling app.
+
 ## Documentation
 
 - [Deploy on a VPS with Docker Compose](docs/deploy-vps.md) covers `docker-compose.yml`, `.env` setup, logs, firewall notes, and optional Caddy HTTPS.
+- [Agent integration guide](docs/agent-integration.md) helps humans and coding agents connect applications to Go-Ai safely.
 - [Adding models and providers](docs/adding-models.md) explains local aliases, fallback ordering, provider wiring, capability caveats, and why v0.1 stays focused on Gemini plus OpenRouter.
 - [Next.js client integration](docs/next-client.md) shows server-side usage patterns, streaming, and tool-calling pass-through from a Next app.
 - [Design principles](docs/design-principles.md) describes the gateway boundary and non-goals.
@@ -190,7 +217,7 @@ Protected routes require:
 Authorization: Bearer <GO_AI_SHARED_SECRET>
 ```
 
-## Model aliases, fallback, and discovery
+## Model aliases, fallback, and catalog refresh
 
 Client applications should send local aliases such as `default` or omit `model` entirely. They should not depend on real provider model slugs. Go-Ai rewrites the alias to the selected upstream model before proxying the request.
 
@@ -210,14 +237,20 @@ Successful chat responses include diagnostic headers:
 - `X-Go-Ai-Fallback-Used`
 - `X-Go-Ai-Duration-Ms`
 
-Inspect model routing status:
+Inspect the local model catalog and alias diagnostics:
 
 ```sh
 curl http://localhost:8080/v1/models \
   -H "Authorization: Bearer <GO_AI_SHARED_SECRET>"
 ```
 
-Go-Ai refreshes an in-memory provider model catalog on startup and then every hour by default. Discovery failures are logged as warnings and do not prevent the app from starting; the static alias registry remains the safe baseline. Redis is intentionally not required for the MVP.
+### Model catalog refresh
+
+Go-Ai refreshes an in-memory provider model catalog on startup and then every `MODEL_REFRESH_INTERVAL` (`1h` by default). The refresh runs inside the Go-Ai process/container, so it works the same on Fly.io, Render, a VPS, or any Docker host. It does not require Redis, an external cron job, a database, or Fly scheduled jobs.
+
+This reduces the need to constantly check provider model availability by hand. Use `GET /v1/models` to inspect the current provider catalog and local alias diagnostics for the running instance. It is not an upstream OpenAI model-list pass-through.
+
+Discovery does not replace the alias contract. Go-Ai does not blindly switch to the newest, cheapest, or first discovered model at runtime. The static alias registry remains the safe baseline for app behavior; discovery failures are logged as warnings and do not prevent the app from starting.
 
 To add aliases, adjust fallback candidates, or wire a new provider, follow [Adding models and providers](docs/adding-models.md).
 

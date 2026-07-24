@@ -26,6 +26,8 @@ Go-Ai owns the provider boundary:
 
 This split keeps domain decisions close to the app that has the user, database, permissions, and audit context.
 
+Agent guidance in [Agent integration guide](agent-integration.md) and [`llms.txt`](../llms.txt) exists to keep generated integrations aligned with this boundary.
+
 ## Privacy and logging
 
 Go-Ai must not log prompts, messages, request bodies, response bodies, tool arguments, authorization headers, provider keys, shared secrets, or `.env` values.
@@ -49,6 +51,8 @@ The application loop is responsible for:
 ## Model aliases are the app contract
 
 Client apps should depend on local aliases such as `default` or `gemini-flash`, not raw provider slugs. Provider names change, availability changes, and fallback candidates can evolve. The alias is the public contract between apps and Go-Ai; provider-specific model names are an implementation detail behind that contract.
+
+Go-Ai refreshes provider model catalogs automatically inside the running process so operators can inspect availability without constantly checking provider lists by hand. That autonomy does not make discovery an automatic router: the static alias registry remains the stable baseline, and Go-Ai does not blindly move apps to the newest discovered provider model.
 
 Changing alias behavior should be treated as a compatibility change and covered by tests.
 
