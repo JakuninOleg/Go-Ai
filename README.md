@@ -169,9 +169,12 @@ Go-Ai includes concise integration guidance for coding agents such as Cursor, Cl
 
 - [`llms.txt`](llms.txt) gives a short machine-readable project context and integration rules.
 - [Agent integration guide](docs/agent-integration.md) explains the HTTP contract, migration checklist, streaming, tool calling, and security boundaries.
+- [Start here](docs/agent-prompts/start-here.md) explains which files to copy into another project under `docs/go-ai/` and gives one simple prompt for the coding agent.
 - [Connect an app to Go-Ai](docs/agent-prompts/connect-go-ai.md) is a copy-paste prompt for minimal non-streaming integrations.
 - [Migrate from Vercel AI SDK](docs/agent-prompts/migrate-from-vercel-ai-sdk.md) is a copy-paste prompt for replacing provider SDK calls with Go-Ai while preserving app UI behavior.
 - [Add streaming](docs/agent-prompts/add-streaming.md) and [add tool calling](docs/agent-prompts/add-tool-calling.md) cover the two common follow-up tasks.
+
+For another project, copy the integration pack into `docs/go-ai/`, start with `docs/agent-prompts/start-here.md`, then use the relevant connect, migrate, streaming, or tool-calling prompt.
 
 The important boundary is the same for humans and agents: call Go-Ai from backend code, keep `GO_AI_SHARED_SECRET` server-side only, and execute product tools in the calling app.
 

@@ -37,7 +37,7 @@ Environment variables are loaded from the process environment and local `.env` v
 - Tool-calling payload compatibility is supported through pass-through proxying only. Tool execution intentionally lives in calling applications/services for now; do not add executors or business-specific tool logic inside Go-Ai.
 - Model aliases are a local contract for client apps. Follow `docs/adding-models.md` and update tests when changing alias behavior.
 - Gemini/OpenRouter model slugs can change over time. Verify the model list against official provider documentation before relying on a slug for production.
-- For generated app integrations, point agents to `llms.txt`, `docs/agent-integration.md`, and `docs/agent-prompts/` so they keep secrets server-side and preserve the Go-Ai/app boundary.
+- For generated app integrations, point agents to `docs/agent-prompts/start-here.md`, `llms.txt`, and `docs/agent-integration.md` so they copy the right files, keep secrets server-side, and preserve the Go-Ai/app boundary.
 
 ## Validation
 

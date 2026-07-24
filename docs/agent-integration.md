@@ -4,6 +4,12 @@ This guide is for developers and coding agents connecting an application to Go-A
 
 Go-Ai is the provider gateway. The target application remains responsible for product behavior, user context, permissions, persistence, UI contracts, and tool execution.
 
+## Using this guide in another project
+
+For a short handoff to a coding agent, start with [Start here: integrate Go-Ai into another project](agent-prompts/start-here.md).
+
+Copy `llms.txt`, this guide, and the relevant prompt files into the target app under `docs/go-ai/`. If the target app is Next.js, copy `docs/next-client.md` too. The target app should then add server-side `GO_AI_BASE_URL` and `GO_AI_SHARED_SECRET` values and ask the agent to audit the existing AI integration before editing files.
+
 ## What agents should know before editing an app
 
 Before changing code, inspect the target app and answer these questions:

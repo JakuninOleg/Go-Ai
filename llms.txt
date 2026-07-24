@@ -36,6 +36,7 @@ Go-Ai is a small OpenAI-compatible HTTP gateway for server-side applications and
 
 ## Copy-paste task prompts
 
+- Start here for another project: `docs/agent-prompts/start-here.md`.
 - Connect an app to Go-Ai: `docs/agent-prompts/connect-go-ai.md`.
 - Migrate from Vercel AI SDK/provider SDK calls: `docs/agent-prompts/migrate-from-vercel-ai-sdk.md`.
 - Add streaming: `docs/agent-prompts/add-streaming.md`.
