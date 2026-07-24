@@ -14,7 +14,7 @@ Use placeholders for secrets in code and documentation. Never commit real values
 
 ## Health check
 
-`GET /health` is public and does not require authorization.
+`GET /health` is public and does not require authorization. It is a simple liveness check; it does not verify provider keys, upstream providers, or the model catalog.
 
 ```sh
 curl https://go-ai-i8r-lg.fly.dev/health
@@ -89,7 +89,7 @@ Request body with an explicit local model alias:
 
 Go-Ai resolves local aliases to provider-specific model names before forwarding the request upstream. Next applications should keep using aliases such as `default` or omit `model`; they should not know or store real provider model slugs.
 
-## Model fallback and status
+## Model fallback and catalog diagnostics
 
 The `default` alias is backed by ordered provider candidates. Go-Ai tries the primary Gemini candidate first and can fall back to a conservative OpenRouter free candidate when the failure is likely temporary:
 
@@ -118,7 +118,7 @@ const durationMs = response.headers.get("X-Go-Ai-Duration-Ms");
 
 Go-Ai also refreshes its in-memory provider model catalog on startup and then hourly by default. No Redis is required for this MVP: Fly instances can keep a local catalog, and the static alias registry remains the safe fallback if discovery fails. Redis may make sense later for multi-instance shared state, rate limits, or cross-instance cache coordination.
 
-The protected status endpoint shows aliases, candidates, discovered provider models, and refresh status:
+The protected model catalog endpoint returns local aliases and candidates together with discovered provider models and refresh diagnostics. It is not an upstream OpenAI model-list pass-through, and discovery does not automatically switch an alias target:
 
 ```sh
 curl https://go-ai-i8r-lg.fly.dev/v1/models \
@@ -135,7 +135,7 @@ fly logs -a go-ai-i8r-lg
 
 The chat log line includes safe metadata such as request ID, route, status, duration, selected provider, upstream model, fallback flag, streaming flag, and error type. It does not log prompts, messages, request/response bodies, tool arguments, `Authorization` headers, provider keys, or `.env` values.
 
-Runtime counters are exposed through the protected status endpoint:
+Runtime counters are exposed through the separate protected runtime status endpoint:
 
 ```sh
 curl https://go-ai-i8r-lg.fly.dev/v1/status \

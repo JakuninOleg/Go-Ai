@@ -2,12 +2,12 @@
 
 Go-Ai is a small OpenAI-compatible HTTP gateway for server-side applications and services. It exposes a protected chat completions endpoint, resolves local model aliases, and proxies requests to configured LLM providers. It is not an agent framework and does not execute application tools.
 
-## Primary contract
+## API contract
 
-- Health check: `GET /health`.
-- Chat completions: `POST /v1/chat/completions`.
-- Auth: `Authorization: Bearer <GO_AI_SHARED_SECRET>` is required for protected routes.
-- Body: send an OpenAI-compatible chat completions JSON body.
+- `GET /health` is public and provides simple liveness only; it does not check provider keys, upstream providers, or the model catalog.
+- `POST /v1/chat/completions` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>`. Send an OpenAI-compatible chat-completions JSON body; `stream: true` uses HTTP/SSE pass-through. Go-Ai resolves local aliases and proxies the upstream response.
+- `GET /v1/models` requires bearer auth. It is an operator endpoint for the static local alias registry and discovered provider model catalog diagnostics, not an upstream OpenAI pass-through. Discovery never automatically changes an alias target.
+- `GET /v1/status` requires bearer auth. It is an operator endpoint for a process-local runtime metrics snapshot; values reset on restart and are not shared or persisted across instances.
 - Model: omit `model` to use the default local alias, or send a known local alias such as `default` or `gemini-flash`.
 - Model catalogs refresh inside Go-Ai; target apps should still use aliases instead of hardcoding provider slugs from `/v1/models`.
 - Successful upstream responses are proxied with their status, headers, and body.

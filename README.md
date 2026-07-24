@@ -22,10 +22,21 @@ If you only need the minimum, call `/v1/chat/completions` from your backend with
 - [x] HTTP/SSE streaming pass-through with `stream: true`.
 - [x] Tool-calling payload pass-through without server-side tool execution.
 - [x] In-process provider model catalog refresh with an in-memory refresh interval.
-- [x] Protected model/routing status endpoint at `GET /v1/models`.
+- [x] Protected model catalog and alias diagnostics at `GET /v1/models`.
 - [x] Safe stdout JSON logs, request IDs, diagnostic headers, and protected in-memory metrics at `GET /v1/status`.
 - [x] Docker, Docker Compose, Fly.io, and Render deployment configuration.
 - [x] CI for formatting, tests, and `go vet`.
+
+## API reference
+
+Go-Ai exposes these four routes. It is compatible with the OpenAI chat-completions request/response flow only; it does not implement the full OpenAI API.
+
+| Method and path | Auth | Purpose |
+| --- | --- | --- |
+| `GET /health` | Public | Simple liveness response. It does not check provider keys, upstream providers, or the model catalog. |
+| `POST /v1/chat/completions` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Accepts OpenAI-compatible chat-completions JSON and HTTP/SSE streaming requests. Go-Ai resolves a local model alias, then proxies the upstream response. |
+| `GET /v1/models` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Returns the local alias registry and diagnostic snapshot of the discovered provider model catalog. This is not an upstream OpenAI pass-through, and discovery never automatically changes an alias target. |
+| `GET /v1/status` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Returns a process-local runtime metrics snapshot. Metrics reset on restart and are neither shared nor persisted across instances. |
 
 ## Architecture
 
@@ -226,7 +237,7 @@ Successful chat responses include diagnostic headers:
 - `X-Go-Ai-Fallback-Used`
 - `X-Go-Ai-Duration-Ms`
 
-Inspect model routing status:
+Inspect the local model catalog and alias diagnostics:
 
 ```sh
 curl http://localhost:8080/v1/models \
@@ -237,7 +248,7 @@ curl http://localhost:8080/v1/models \
 
 Go-Ai refreshes an in-memory provider model catalog on startup and then every `MODEL_REFRESH_INTERVAL` (`1h` by default). The refresh runs inside the Go-Ai process/container, so it works the same on Fly.io, Render, a VPS, or any Docker host. It does not require Redis, an external cron job, a database, or Fly scheduled jobs.
 
-This reduces the need to constantly check provider model availability by hand. Use `GET /v1/models` to inspect the current provider catalog and routing status for the running instance.
+This reduces the need to constantly check provider model availability by hand. Use `GET /v1/models` to inspect the current provider catalog and local alias diagnostics for the running instance. It is not an upstream OpenAI model-list pass-through.
 
 Discovery does not replace the alias contract. Go-Ai does not blindly switch to the newest, cheapest, or first discovered model at runtime. The static alias registry remains the safe baseline for app behavior; discovery failures are logged as warnings and do not prevent the app from starting.
 

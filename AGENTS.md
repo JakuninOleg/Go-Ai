@@ -13,8 +13,10 @@ Go-Ai is a small Go API layer between user applications and LLM providers. The c
 
 ## Current behavior
 
-- Public route: `GET /health`.
-- Protected route: `POST /v1/chat/completions` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>`.
+- Public route: `GET /health` provides simple liveness only; it does not check provider keys, upstream providers, or the model catalog.
+- Protected route: `POST /v1/chat/completions` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>`, accepts OpenAI-compatible chat-completions JSON and HTTP/SSE streaming, resolves local aliases, and proxies upstream responses.
+- Protected route: `GET /v1/models` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>` and returns the static local alias registry plus discovered provider catalog diagnostics. It is not an upstream OpenAI pass-through, and discovery does not automatically switch alias targets.
+- Protected route: `GET /v1/status` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>` and returns a process-local runtime metrics snapshot. Metrics reset on restart and are not shared or persisted across instances.
 - If `model` is omitted, the service uses `models.DefaultModelAlias`.
 - If `model` is present but unknown, the service returns a predictable `400` JSON error instead of silently falling back.
 - Successful upstream responses are proxied with their status, headers, and body.
