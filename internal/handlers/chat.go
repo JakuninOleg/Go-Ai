@@ -319,6 +319,18 @@ func writeServiceError(w http.ResponseWriter, err error) (int, string) {
 		return http.StatusBadGateway, "provider_not_configured"
 	}
 
+	var upstreamErr providers.UpstreamError
+	if errors.As(err, &upstreamErr) {
+		writeJSONError(
+			w,
+			"AI provider request failed",
+			"server_error",
+			"provider_"+upstreamErr.Category,
+			http.StatusBadGateway,
+		)
+		return http.StatusBadGateway, "provider_" + upstreamErr.Category
+	}
+
 	writeJSONError(
 		w,
 		"AI provider error",

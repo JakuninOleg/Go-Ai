@@ -39,7 +39,7 @@ func (p *OpenRouterProvider) Chat(
 	)
 
 	if err != nil {
-		return nil, err
+		return nil, ClassifyUpstreamError("openrouter", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -49,7 +49,12 @@ func (p *OpenRouterProvider) Chat(
 		"Bearer "+p.cfg.APIKey,
 	)
 
-	return p.client.Do(req)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, ClassifyUpstreamError("openrouter", err)
+	}
+
+	return resp, nil
 }
 
 func (p *OpenRouterProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {

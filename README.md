@@ -194,6 +194,7 @@ The important boundary is the same for humans and agents: call Go-Ai from backen
 - [Deploy on a VPS with Docker Compose](docs/deploy-vps.md) covers `docker-compose.yml`, `.env` setup, logs, firewall notes, and optional Caddy HTTPS.
 - [Agent integration guide](docs/agent-integration.md) helps humans and coding agents connect applications to Go-Ai safely.
 - [Adding models and providers](docs/adding-models.md) explains local aliases, fallback ordering, provider wiring, capability caveats, and why v0.1 stays focused on Gemini plus OpenRouter.
+- [Post-deploy smoke check](docs/post-deploy-smoke-check.md) verifies health plus real provider-backed chat requests without printing credentials or model output.
 - [Next.js client integration](docs/next-client.md) shows server-side usage patterns, streaming, and tool-calling pass-through from a Next app.
 - [Design principles](docs/design-principles.md) describes the gateway boundary and non-goals.
 
@@ -221,12 +222,12 @@ Authorization: Bearer <GO_AI_SHARED_SECRET>
 
 Client applications should send local aliases such as `default` or omit `model` entirely. They should not depend on real provider model slugs. Go-Ai rewrites the alias to the selected upstream model before proxying the request.
 
-The `default` alias has ordered candidates. Go-Ai tries the primary Gemini model first and can fall back to a conservative OpenRouter free candidate when the upstream failure is retryable:
+The `default` alias has ordered candidates. Go-Ai tries Gemini `gemini-3.5-flash` first and can fall back to OpenRouter's documented `openrouter/free` router when the upstream failure is retryable:
 
 - provider/network error before a response is received;
 - HTTP `429`, `500`, `502`, `503`, or `504` from the upstream provider.
 
-Go-Ai does not fall back for invalid client requests, unknown aliases, missing provider API keys, or upstream `400`, `401`, and `403` responses. If every candidate fails, the gateway returns the final upstream response when one exists, or a gateway error for network failures.
+Go-Ai does not fall back for invalid client requests, unknown aliases, missing provider API keys, or upstream `400`, `401`, and `403` responses. If every candidate fails, the gateway returns the final upstream response when one exists, or a gateway error for network failures. `openrouter/free` selects from OpenRouter's currently free models; it does not pin a particular model or guarantee production-grade availability.
 
 Successful chat responses include diagnostic headers:
 

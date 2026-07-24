@@ -41,7 +41,7 @@ var AliasRegistry = map[string]AliasConfig{
 				Provider: ProviderGemini,
 			},
 			{
-				Name:     "google/gemini-2.0-flash-exp:free",
+				Name:     "openrouter/free",
 				Provider: ProviderOpenRouter,
 			},
 		},
@@ -59,7 +59,7 @@ var AliasRegistry = map[string]AliasConfig{
 	"openrouter-gemini": {
 		Candidates: []ModelConfig{
 			{
-				Name:     "google/gemini-2.5-flash",
+				Name:     "google/gemini-3.5-flash",
 				Provider: ProviderOpenRouter,
 			},
 		},
@@ -68,7 +68,7 @@ var AliasRegistry = map[string]AliasConfig{
 	"openrouter-free": {
 		Candidates: []ModelConfig{
 			{
-				Name:     "google/gemini-2.0-flash-exp:free",
+				Name:     "openrouter/free",
 				Provider: ProviderOpenRouter,
 			},
 		},

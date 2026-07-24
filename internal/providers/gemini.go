@@ -39,7 +39,7 @@ func (g *GeminiProvider) Chat(
 	)
 
 	if err != nil {
-		return nil, err
+		return nil, ClassifyUpstreamError("gemini", err)
 	}
 
 	req.Header.Set(
@@ -52,7 +52,12 @@ func (g *GeminiProvider) Chat(
 		"Bearer "+g.cfg.APIKey,
 	)
 
-	return g.client.Do(req)
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, ClassifyUpstreamError("gemini", err)
+	}
+
+	return resp, nil
 }
 
 func (g *GeminiProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {

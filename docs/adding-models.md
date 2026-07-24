@@ -19,7 +19,7 @@ Additional providers can be added through the provider interface when there is a
 For Gemini or OpenRouter, most model additions start in [`internal/models/registry.go`](../internal/models/registry.go).
 
 1. Choose the local alias clients should use.
-2. Verify the provider's real model slug against the provider's current documentation or API before relying on it in production.
+2. Verify the provider's real model slug against the provider's current documentation or API before relying on it in production. For this registry, direct Gemini `gemini-3.5-flash` is verified against Gemini's OpenAI-compatibility documentation; `google/gemini-3.5-flash` and `openrouter/free` are verified against the OpenRouter catalog.
 3. Add an entry to `AliasRegistry` with one or more `ModelConfig` candidates.
 4. Add or update the compatibility entry in `Registry` if code still needs direct alias-to-primary-model lookup.
 5. Add or update tests in `internal/models` and `internal/services` when alias resolution, fallback order, or error behavior changes.
@@ -73,6 +73,12 @@ DefaultModelAlias: {
 Put the preferred candidate first. Go-Ai only tries the next candidate when the previous attempt fails in a retryable way, such as a network error before a response is received or an upstream `429`, `500`, `502`, `503`, or `504`.
 
 Do not use fallback to hide invalid requests, auth failures, missing API keys, or unsupported model features. Those should fail clearly.
+
+### Free-model policy
+
+`openrouter-free` and the default fallback use OpenRouter's documented `openrouter/free` router rather than a transient `:free` model slug. At request time OpenRouter selects a currently available free model compatible with the request. This preserves the local free alias while being honest about its tradeoff: the concrete model can change, free-tier limits and availability can change, and it is not a durable production-SLA fallback.
+
+`openrouter-gemini` is separate: it pins the catalog-verified Gemini model exposed by OpenRouter and makes no free-tier claim. Direct Gemini and OpenRouter have distinct catalogs and pricing/availability policies; a model being available through one does not establish availability or price through the other.
 
 ## Add a new provider
 

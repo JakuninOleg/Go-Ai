@@ -39,6 +39,15 @@ type providerResult struct {
 	err    error
 }
 
+type catalogProvider struct {
+	*sequenceProvider
+	models []providers.ModelInfo
+}
+
+func (p *catalogProvider) ListModels(context.Context) ([]providers.ModelInfo, error) {
+	return p.models, nil
+}
+
 func (p *sequenceProvider) Chat(_ context.Context, body []byte) (*http.Response, error) {
 	p.calls++
 	p.bodies = append(p.bodies, append([]byte(nil), body...))
@@ -297,6 +306,51 @@ func TestChatFallbacksOnPrimaryNetworkError(t *testing.T) {
 	}
 	if resp.Header.Get("X-Go-Ai-Fallback-Used") != "true" {
 		t.Fatalf("expected fallback header true, got %q", resp.Header.Get("X-Go-Ai-Fallback-Used"))
+	}
+}
+
+func TestChatFallbacksOnClassifiedPrimaryTransportError(t *testing.T) {
+	gemini := &sequenceProvider{responses: []providerResult{{err: providers.ClassifyUpstreamError("gemini", errors.New("connection refused"))}}}
+	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
+	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+
+	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if openRouter.calls != 1 || resp.Header.Get("X-Go-Ai-Fallback-Used") != "true" {
+		t.Fatalf("expected classified transport error to use fallback, calls=%d headers=%#v", openRouter.calls, resp.Header)
+	}
+}
+
+func TestChatSkipsCandidatesKnownUnavailableFromCatalog(t *testing.T) {
+	gemini := &catalogProvider{
+		sequenceProvider: &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"gemini"}`}}},
+		models:           []providers.ModelInfo{{ID: "another-gemini-model"}},
+	}
+	openRouter := &catalogProvider{
+		sequenceProvider: &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}},
+		models:           []providers.ModelInfo{{ID: "openrouter/free"}},
+	}
+	router := providers.NewProviderRouter(gemini, openRouter)
+	if err := router.RefreshModelCatalog(context.Background()); err != nil {
+		t.Fatalf("RefreshModelCatalog returned error: %v", err)
+	}
+	service := NewAIService(router)
+
+	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatalf("Chat returned error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if gemini.calls != 0 {
+		t.Fatalf("expected known-unavailable Gemini candidate to be skipped, got %d calls", gemini.calls)
+	}
+	if openRouter.calls != 1 || resp.Header.Get("X-Go-Ai-Provider") != models.ProviderOpenRouter {
+		t.Fatalf("expected OpenRouter fallback after catalog gate, calls=%d headers=%#v", openRouter.calls, resp.Header)
 	}
 }
 
