@@ -163,9 +163,22 @@ export async function askGoAi(messages: ChatMessage[]) {
 
 For a copyable minimal helper, see [examples/minimal-http-client](examples/minimal-http-client). For an advanced Next.js route-handler example with streaming and a tool-calling skeleton, see [examples/next-route-handler](examples/next-route-handler).
 
+## Using Go-Ai with coding agents
+
+Go-Ai includes concise integration guidance for coding agents such as Cursor, Claude Code, Harvi, Copilot, and similar tools. These files are meant to help an agent connect an app to Go-Ai without moving secrets or app-owned tool logic into the wrong layer:
+
+- [`llms.txt`](llms.txt) gives a short machine-readable project context and integration rules.
+- [Agent integration guide](docs/agent-integration.md) explains the HTTP contract, migration checklist, streaming, tool calling, and security boundaries.
+- [Connect an app to Go-Ai](docs/agent-prompts/connect-go-ai.md) is a copy-paste prompt for minimal non-streaming integrations.
+- [Migrate from Vercel AI SDK](docs/agent-prompts/migrate-from-vercel-ai-sdk.md) is a copy-paste prompt for replacing provider SDK calls with Go-Ai while preserving app UI behavior.
+- [Add streaming](docs/agent-prompts/add-streaming.md) and [add tool calling](docs/agent-prompts/add-tool-calling.md) cover the two common follow-up tasks.
+
+The important boundary is the same for humans and agents: call Go-Ai from backend code, keep `GO_AI_SHARED_SECRET` server-side only, and execute product tools in the calling app.
+
 ## Documentation
 
 - [Deploy on a VPS with Docker Compose](docs/deploy-vps.md) covers `docker-compose.yml`, `.env` setup, logs, firewall notes, and optional Caddy HTTPS.
+- [Agent integration guide](docs/agent-integration.md) helps humans and coding agents connect applications to Go-Ai safely.
 - [Adding models and providers](docs/adding-models.md) explains local aliases, fallback ordering, provider wiring, capability caveats, and why v0.1 stays focused on Gemini plus OpenRouter.
 - [Next.js client integration](docs/next-client.md) shows server-side usage patterns, streaming, and tool-calling pass-through from a Next app.
 - [Design principles](docs/design-principles.md) describes the gateway boundary and non-goals.

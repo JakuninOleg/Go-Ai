@@ -26,6 +26,8 @@ Go-Ai is a small OpenAI-compatible gateway and model router. Keep provider acces
 
 Tool execution intentionally belongs to calling applications or services because they own business logic, databases, permissions, and user context. A Next app is one common client, not the only one. Please do not add business-specific tool executors to Go-Ai.
 
+Agent-generated integrations should follow [Agent integration guide](docs/agent-integration.md). In particular, keep `GO_AI_SHARED_SECRET` server-side in the target app and do not move app tools, permissions, memory, or product workflow into Go-Ai.
+
 ## Adding providers or models
 
 - Start with [Adding models and providers](docs/adding-models.md) before changing the registry or provider router.

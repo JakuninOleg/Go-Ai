@@ -1,0 +1,42 @@
+# Go-Ai agent context
+
+Go-Ai is a small OpenAI-compatible HTTP gateway for server-side applications and services. It exposes a protected chat completions endpoint, resolves local model aliases, and proxies requests to configured LLM providers. It is not an agent framework and does not execute application tools.
+
+## Primary contract
+
+- Health check: `GET /health`.
+- Chat completions: `POST /v1/chat/completions`.
+- Auth: `Authorization: Bearer <GO_AI_SHARED_SECRET>` is required for protected routes.
+- Body: send an OpenAI-compatible chat completions JSON body.
+- Model: omit `model` to use the default local alias, or send a known local alias such as `default` or `gemini-flash`.
+- Successful upstream responses are proxied with their status, headers, and body.
+
+## Integration rules for coding agents
+
+- Call Go-Ai from server-side or backend code only.
+- Do not expose `GO_AI_SHARED_SECRET` in browser code, public env vars, client bundles, logs, telemetry, or screenshots.
+- Target apps usually need server-side env vars named `GO_AI_BASE_URL` and `GO_AI_SHARED_SECRET`.
+- Use `POST ${GO_AI_BASE_URL}/v1/chat/completions` with `Content-Type: application/json` and bearer auth.
+- For non-streaming responses, parse the JSON response after checking `response.ok`.
+- For streaming, send `stream: true` and read `response.body` as a stream; do not call `res.json()` on streaming responses.
+- Preserve the target app's public API/UI contract when replacing provider SDK calls.
+- Tool execution belongs to the calling app. Go-Ai only proxies `tools`, `tool_choice`, assistant `tool_calls`, and follow-up `role: "tool"` messages.
+- Do not move product tools, database access, permissions, memory, RBAC, or business workflows into Go-Ai.
+- Do not log prompts, messages, request bodies, response bodies, tool arguments, provider keys, bearer tokens, `GO_AI_SHARED_SECRET`, or `.env` values.
+
+## Useful files for agents
+
+- Project overview and HTTP examples: `README.md`.
+- Human and agent integration guide: `docs/agent-integration.md`.
+- Next.js server-side patterns: `docs/next-client.md`.
+- Model alias and provider extension rules: `docs/adding-models.md`.
+- Boundary and non-goals: `docs/design-principles.md`.
+- Minimal HTTP client example: `examples/minimal-http-client`.
+- Next.js route-handler example: `examples/next-route-handler`.
+
+## Copy-paste task prompts
+
+- Connect an app to Go-Ai: `docs/agent-prompts/connect-go-ai.md`.
+- Migrate from Vercel AI SDK/provider SDK calls: `docs/agent-prompts/migrate-from-vercel-ai-sdk.md`.
+- Add streaming: `docs/agent-prompts/add-streaming.md`.
+- Add app-owned tool calling: `docs/agent-prompts/add-tool-calling.md`.

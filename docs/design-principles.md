@@ -26,6 +26,8 @@ Go-Ai owns the provider boundary:
 
 This split keeps domain decisions close to the app that has the user, database, permissions, and audit context.
 
+Agent guidance in [Agent integration guide](agent-integration.md) and [`llms.txt`](../llms.txt) exists to keep generated integrations aligned with this boundary.
+
 ## Privacy and logging
 
 Go-Ai must not log prompts, messages, request bodies, response bodies, tool arguments, authorization headers, provider keys, shared secrets, or `.env` values.
