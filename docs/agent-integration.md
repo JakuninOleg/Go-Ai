@@ -47,6 +47,7 @@ Notes:
 
 - `model` is optional. If omitted, Go-Ai uses its default local alias.
 - Prefer Go-Ai local aliases over provider model slugs in client applications.
+- Do not hardcode provider slugs in apps just because they appear in `/v1/models`; Go-Ai refreshes provider catalogs, but aliases remain the stable app contract.
 - Send OpenAI-compatible fields such as `messages`, `stream`, `temperature`, `tools`, and `tool_choice` as needed.
 - Go-Ai resolves the local alias, forwards the request upstream, and proxies the upstream response.
 - Check `response.ok` before returning data to the UI.

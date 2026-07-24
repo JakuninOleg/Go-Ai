@@ -63,6 +63,8 @@ docker compose logs -f go-ai
 
 Go-Ai writes safe structured logs to stdout. Logs intentionally do not include prompts, request bodies, provider keys, `Authorization` headers, or `.env` values.
 
+Model catalog refresh runs inside the Go-Ai container on startup and every `MODEL_REFRESH_INTERVAL` (`1h` by default). You do not need a VPS cron job, Redis, a database, or another scheduler to keep `/v1/models` reasonably current for the running service.
+
 ## 4. Test the service
 
 From the VPS:
@@ -155,6 +157,7 @@ docker compose down
 
 - `curl http://localhost:8080/health` fails: check `docker compose ps` and `docker compose logs -f go-ai`.
 - Provider requests fail: verify `.env` values on the server and confirm the VPS region can reach the provider APIs.
+- `/v1/models` is empty, stale, or missing provider entries: check provider API keys, outbound network access from the container, configured provider base URLs, and `docker compose logs -f go-ai` for model refresh warnings.
 - A model alias is missing or points to the wrong upstream model: check the static registry and fallback order described in [Adding models and providers](adding-models.md), then rebuild the container.
 - HTTPS certificate is not issued: confirm DNS points to the VPS and ports `80` and `443` are open.
 - Chat requests return `401`: verify the backend caller sends `Authorization: Bearer <GO_AI_SHARED_SECRET>` exactly.

@@ -21,7 +21,7 @@ If you only need the minimum, call `/v1/chat/completions` from your backend with
 - [x] Gemini-first routing with OpenRouter fallback for retryable upstream failures.
 - [x] HTTP/SSE streaming pass-through with `stream: true`.
 - [x] Tool-calling payload pass-through without server-side tool execution.
-- [x] Provider model discovery with an in-memory refresh interval.
+- [x] In-process provider model catalog refresh with an in-memory refresh interval.
 - [x] Protected model/routing status endpoint at `GET /v1/models`.
 - [x] Safe stdout JSON logs, request IDs, diagnostic headers, and protected in-memory metrics at `GET /v1/status`.
 - [x] Docker, Docker Compose, Fly.io, and Render deployment configuration.
@@ -206,7 +206,7 @@ Protected routes require:
 Authorization: Bearer <GO_AI_SHARED_SECRET>
 ```
 
-## Model aliases, fallback, and discovery
+## Model aliases, fallback, and catalog refresh
 
 Client applications should send local aliases such as `default` or omit `model` entirely. They should not depend on real provider model slugs. Go-Ai rewrites the alias to the selected upstream model before proxying the request.
 
@@ -233,7 +233,13 @@ curl http://localhost:8080/v1/models \
   -H "Authorization: Bearer <GO_AI_SHARED_SECRET>"
 ```
 
-Go-Ai refreshes an in-memory provider model catalog on startup and then every hour by default. Discovery failures are logged as warnings and do not prevent the app from starting; the static alias registry remains the safe baseline. Redis is intentionally not required for the MVP.
+### Model catalog refresh
+
+Go-Ai refreshes an in-memory provider model catalog on startup and then every `MODEL_REFRESH_INTERVAL` (`1h` by default). The refresh runs inside the Go-Ai process/container, so it works the same on Fly.io, Render, a VPS, or any Docker host. It does not require Redis, an external cron job, a database, or Fly scheduled jobs.
+
+This reduces the need to constantly check provider model availability by hand. Use `GET /v1/models` to inspect the current provider catalog and routing status for the running instance.
+
+Discovery does not replace the alias contract. Go-Ai does not blindly switch to the newest, cheapest, or first discovered model at runtime. The static alias registry remains the safe baseline for app behavior; discovery failures are logged as warnings and do not prevent the app from starting.
 
 To add aliases, adjust fallback candidates, or wire a new provider, follow [Adding models and providers](docs/adding-models.md).
 

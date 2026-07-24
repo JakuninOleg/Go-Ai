@@ -9,6 +9,7 @@ Go-Ai is a small OpenAI-compatible HTTP gateway for server-side applications and
 - Auth: `Authorization: Bearer <GO_AI_SHARED_SECRET>` is required for protected routes.
 - Body: send an OpenAI-compatible chat completions JSON body.
 - Model: omit `model` to use the default local alias, or send a known local alias such as `default` or `gemini-flash`.
+- Model catalogs refresh inside Go-Ai; target apps should still use aliases instead of hardcoding provider slugs from `/v1/models`.
 - Successful upstream responses are proxied with their status, headers, and body.
 
 ## Integration rules for coding agents
