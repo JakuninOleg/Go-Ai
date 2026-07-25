@@ -15,6 +15,9 @@ llm-gateway
 .env
 .env.local
 
+# Local unpublished article drafts and assets
+docs/articles/
+
 # IDE
 .idea/
 .vscode/

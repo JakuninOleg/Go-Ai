@@ -139,7 +139,7 @@ func TestChatCompletionsPreservesClientRequestID(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsHTTPPassesThroughToolCallHistory(t *testing.T) {
+func TestChatCompletionsPreservesOpaqueToolCallMetadata(t *testing.T) {
 	fakeGemini := &httpCaptureProvider{
 		statusCode: http.StatusOK,
 		headers:    make(http.Header),
@@ -157,7 +157,8 @@ func TestChatCompletionsHTTPPassesThroughToolCallHistory(t *testing.T) {
 				"tool_calls":[{
 					"id":"call_weather_1",
 					"type":"function",
-					"function":{"name":"get_weather","arguments":"{\"city\":\"Moscow\"}"}
+					"function":{"name":"get_weather","arguments":"{\"city\":\"Moscow\"}"},
+					"extra_content":{"provider_trace":{"version":1,"entries":[{"kind":"opaque_metadata","value":"preserve-me"}]}}
 				}]
 			},
 			{"role":"tool","tool_call_id":"call_weather_1","content":"{\"temperature\":\"-5 C\"}"}
@@ -169,17 +170,29 @@ func TestChatCompletionsHTTPPassesThroughToolCallHistory(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
 	}
 
+	var expected map[string]json.RawMessage
+	if err := json.Unmarshal(requestBody, &expected); err != nil {
+		t.Fatalf("failed to decode original request body: %v", err)
+	}
+
+	expectedModel, err := json.Marshal(models.Registry[models.DefaultModelAlias].Name)
+	if err != nil {
+		t.Fatalf("failed to marshal expected model: %v", err)
+	}
+	expected["model"] = expectedModel
+
+	expectedBody, err := json.Marshal(expected)
+	if err != nil {
+		t.Fatalf("failed to marshal expected upstream body: %v", err)
+	}
+	assertRawJSONEqual(t, fakeGemini.body, expectedBody)
+
 	var upstream map[string]json.RawMessage
 	if err := json.Unmarshal(fakeGemini.body, &upstream); err != nil {
 		t.Fatalf("failed to decode captured upstream body: %v", err)
 	}
 
-	expectedMessages := []byte(`[
-		{"role":"user","content":"What is the weather in Moscow?"},
-		{"role":"assistant","content":null,"tool_calls":[{"id":"call_weather_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Moscow\"}"}}]},
-		{"role":"tool","tool_call_id":"call_weather_1","content":"{\"temperature\":\"-5 C\"}"}
-	]`)
-	assertRawJSONEqual(t, upstream["messages"], expectedMessages)
+	assertRawJSONEqual(t, upstream["messages"], expected["messages"])
 }
 
 func TestChatCompletionsHTTPPassesThroughStreamingSSE(t *testing.T) {

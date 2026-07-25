@@ -49,7 +49,7 @@ Notes:
 - Prefer Go-Ai local aliases over provider model slugs in client applications.
 - Do not hardcode provider slugs in apps just because they appear in `/v1/models`; Go-Ai refreshes provider catalogs, but aliases remain the stable app contract.
 - Send OpenAI-compatible fields such as `messages`, `stream`, `temperature`, `tools`, and `tool_choice` as needed.
-- Go-Ai resolves the local alias, forwards the request upstream, and proxies the upstream response.
+- Go-Ai resolves the local alias, forwards the request upstream, and proxies the upstream response. It does not execute tools, store memory, or validate provider-specific tool semantics.
 - Check `response.ok` before returning data to the UI.
 
 Minimal server-side TypeScript call:
@@ -155,23 +155,23 @@ Use streaming when the target UI already streams or when the task explicitly ask
 7. Decide how the app handles upstream errors before and after streaming starts.
 8. Test with a real streaming request and verify the UI receives incremental output.
 
-Go-Ai proxies upstream SSE chunks. It does not parse, merge, or rewrite active streams.
+Go-Ai proxies upstream SSE chunks. It does not parse, merge, or rewrite active streams. When a stream contains assistant tool calls, the calling app must assemble all deltas losslessly and retain unknown nested fields before it builds the next tool turn.
 
 ## Tool-calling checklist
 
-Go-Ai supports tool-calling payload compatibility, not tool execution.
+Go-Ai supports tool-calling payload compatibility, not tool execution. Apart from resolving the top-level local `model` alias, it passes request and response tool data through; it does not store memory or validate provider-specific tool semantics.
 
 When adding tool calling to an app:
 
 1. Define tool schemas in the target app.
 2. Send `tools` and optional `tool_choice` to Go-Ai.
-3. Receive assistant `tool_calls` from the proxied model response.
+3. Receive the complete assistant message and retain its `tool_calls` exactly, including opaque or unknown nested metadata. A provider-specific field such as `extra_content` can be required to continue a tool/function loop; do not assume every provider sends it.
 4. Validate the current user, tenant, permissions, and input arguments before executing a tool.
 5. Execute tools in the target app or its trusted backend services.
-6. Append each tool result as an OpenAI-compatible `role: "tool"` message.
-7. Send the follow-up messages through Go-Ai to get the final assistant response.
+6. Keep the unchanged assistant tool-call message in the conversation history and append each matching tool result as an OpenAI-compatible `role: "tool"` message.
+7. Send that full history through Go-Ai to get the final assistant response. Direct Gemini 3 tool/function flows can carry metadata that must round-trip, so clients should treat provider-specific fields as opaque rather than reconstructing tool calls from a narrow schema.
 8. Use a maximum iteration limit to avoid infinite tool loops.
-9. Log only safe metadata; never log tool arguments or secrets.
+9. Log only safe metadata; never log tool arguments, tool results, opaque metadata, prompts, or secrets.
 
 Do not add business-specific tools, database access, or app permissions to Go-Ai.
 
@@ -180,7 +180,7 @@ Do not add business-specific tools, database access, or app permissions to Go-Ai
 - Call Go-Ai from trusted server-side code only.
 - Never expose `GO_AI_SHARED_SECRET` to the browser.
 - Never commit real `.env` values.
-- Never log prompts, messages, request bodies, response bodies, tool arguments, bearer tokens, provider API keys, shared secrets, or `.env` values.
+- Never log prompts, messages, request bodies, response bodies, tool arguments, tool results, opaque tool metadata, bearer tokens, provider API keys, shared secrets, or `.env` values.
 - Preserve app-level authentication, authorization, rate limiting, and audit behavior.
 - Treat model output as untrusted input.
 - Validate tool arguments against the current user and request context before executing anything.

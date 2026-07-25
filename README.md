@@ -222,7 +222,7 @@ Authorization: Bearer <GO_AI_SHARED_SECRET>
 
 Client applications should send local aliases such as `default` or omit `model` entirely. They should not depend on real provider model slugs. Go-Ai rewrites the alias to the selected upstream model before proxying the request.
 
-The `default` alias has exactly one no-cost best-effort candidate: OpenRouter's `openrouter/free` router. It never implicitly falls back to a fixed paid model. At request time OpenRouter dynamically selects a compatible free model, so this is not a pin to the newest free model and does not guarantee a particular model, availability, or production-grade service level.
+`default` and `gemini-flash` use direct Gemini `gemini-3.6-flash`; `default` can fall back on retryable upstream failures to OpenRouter's dynamic free router, `openrouter/free`. The `openrouter-free` alias selects that dynamic free router directly. It is not a pin to a particular free model and does not guarantee availability or a production service level.
 
 `openrouter-gemini` is a separate explicit alias for `google/gemini-2.5-flash`. It is known to accept requests through OpenRouter, but it can report nonzero usage and must not be described or treated as free.
 
@@ -289,7 +289,7 @@ Go-Ai does not parse or rewrite SSE chunks. It resolves the local model alias, f
 
 ## Tool calling compatibility
 
-Go-Ai supports tool-calling payloads as an OpenAI-compatible proxy and model router. It does not execute tools itself: tool execution stays in the calling application or service.
+Go-Ai supports tool-calling payloads as an OpenAI-compatible proxy and model router. It changes the local `model` alias, but does not execute tools, store conversation memory, or validate provider-specific tool semantics. Tool execution stays in the calling application or service.
 
 ```mermaid
 sequenceDiagram
@@ -309,14 +309,18 @@ sequenceDiagram
     Provider-->>App: Final assistant response via Go-Ai
 ```
 
+The calling app must preserve the complete assistant tool-call message between turns, including unknown nested fields such as provider-specific `extra_content`, and send it back unchanged with the matching `role: "tool"` result. Some providers require opaque metadata to continue a tool/function loop; this is not a field that every provider uses. For streaming, assemble tool-call deltas losslessly before constructing that next request. Go-Ai forwards upstream SSE bytes and does not parse, merge, or repair tool-call chunks. Do not log tool arguments, tool results, opaque metadata, prompts, or secrets.
+
 For the minimal HTTP example, see [examples/minimal-http-client](examples/minimal-http-client). For a Next-focused integration guide with auth, fetch examples, HTTP/SSE streaming, tool-calling flow, and voice-input guidance, see [docs/next-client.md](docs/next-client.md).
 
 ## Fallback behavior
 
 ```mermaid
 flowchart TD
-    Start[Request uses default alias] --> Router[Call OpenRouter openrouter/free]
-    Router -->|Success| Return[Proxy response]
+    Start[Request uses default alias] --> Gemini[Call Gemini gemini-3.6-flash]
+    Gemini -->|Success| Return[Proxy response]
+    Gemini -->|Retryable failure| Router[Call OpenRouter openrouter/free]
+    Router -->|Success| Return
     Router -->|Failure| Final[Return upstream response or gateway error]
 ```
 
@@ -337,7 +341,7 @@ The tradeoff is intentional: Go-Ai provides a focused gateway layer, not a full 
 
 ## Why only Gemini and OpenRouter in v0.1?
 
-Provider coverage is intentionally small for the first public baseline. Gemini remains available as a configured provider, while the default route uses OpenRouter's dynamic free router. OpenRouter also provides an explicit, potentially paid Gemini route through one OpenAI-compatible API.
+Provider coverage is intentionally small for the first public baseline. Direct Gemini `gemini-3.6-flash` is the default route, with OpenRouter's dynamic free router as its retryable fallback. OpenRouter also provides an explicit, potentially paid Gemini route through one OpenAI-compatible API.
 
 Keeping the provider set narrow makes the release easier to test and keeps the project honest about its scope. Go-Ai is a focused gateway, not a universal provider marketplace. More providers can be added through the documented provider interface when they have a clear use case and tests. See [Adding models and providers](docs/adding-models.md).
 

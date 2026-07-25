@@ -16,11 +16,12 @@ Context:
 
 Go-Ai tool-calling contract:
 - Go-Ai proxies OpenAI-compatible tools, tool_choice, assistant tool_calls, and role: "tool" messages.
-- Go-Ai does not execute tools.
+- Go-Ai only replaces the local model alias; it does not execute tools, store memory, or validate provider-specific tool semantics.
 - The target app validates permissions, validates arguments, executes tools, handles side effects, and records any required audit events.
 - Call Go-Ai from server-side/backend code only.
 - Send Authorization: Bearer ${GO_AI_SHARED_SECRET} from server-side code only.
-- Do not log prompts, messages, tool arguments, request bodies, response bodies, bearer tokens, provider keys, or env values.
+- Preserve complete assistant tool-call messages between turns, including unknown nested fields. Treat provider-specific metadata such as extra_content as opaque: do not interpret, omit, or regenerate it; send it unchanged with the matching role: "tool" result. If the response streams, assemble all tool-call deltas losslessly before continuing the loop.
+- Do not log prompts, messages, tool arguments, tool results, opaque metadata, request bodies, response bodies, bearer tokens, provider keys, or env values.
 
 Tasks:
 1. Inspect the target app's auth/session model, existing tool-like actions, tests, and route contract.
@@ -29,8 +30,8 @@ Tasks:
 4. Detect assistant tool_calls in the Go-Ai response.
 5. For each tool call, validate the current user/session/tenant and parse arguments with a strict schema.
 6. Execute only allowed app-owned tools.
-7. Append tool results as OpenAI-compatible role: "tool" messages with the matching tool_call_id.
-8. Send follow-up messages through Go-Ai for the final assistant answer.
+7. Keep the full assistant tool-call message in history, then append tool results as OpenAI-compatible role: "tool" messages with the matching tool_call_id.
+8. Send the unchanged history and tool results through Go-Ai for the final assistant answer.
 9. Enforce the configured maximum iteration count to avoid infinite loops.
 10. Add tests for allowed tools, rejected permissions/arguments, and max-iteration behavior.
 11. Run the relevant validation commands.

@@ -8,7 +8,7 @@ Go-Ai is a small OpenAI-compatible HTTP gateway for server-side applications and
 - `POST /v1/chat/completions` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>`. Send an OpenAI-compatible chat-completions JSON body; `stream: true` uses HTTP/SSE pass-through. Go-Ai resolves local aliases and proxies the upstream response.
 - `GET /v1/models` requires bearer auth. It is an operator endpoint for the static local alias registry and discovered provider model catalog diagnostics, not an upstream OpenAI pass-through. Discovery never automatically changes an alias target.
 - `GET /v1/status` requires bearer auth. It is an operator endpoint for a process-local runtime metrics snapshot; values reset on restart and are not shared or persisted across instances.
-- Model: omit `model` to use the no-cost best-effort `default` alias, or send a known local alias such as `default`, `openrouter-free`, or the potentially paid explicit `openrouter-gemini`.
+- Model: omit `model` to use `default` (direct Gemini `gemini-3.6-flash`, with retryable fallback to dynamic OpenRouter `openrouter/free`), or send a known local alias such as `gemini-flash`, `openrouter-free`, or the potentially paid explicit `openrouter-gemini` (`google/gemini-2.5-flash`).
 - Model catalogs refresh inside Go-Ai; target apps should still use aliases instead of hardcoding provider slugs from `/v1/models`.
 - Successful upstream responses are proxied with their status, headers, and body.
 
@@ -21,9 +21,10 @@ Go-Ai is a small OpenAI-compatible HTTP gateway for server-side applications and
 - For non-streaming responses, parse the JSON response after checking `response.ok`.
 - For streaming, send `stream: true` and read `response.body` as a stream; do not call `res.json()` on streaming responses.
 - Preserve the target app's public API/UI contract when replacing provider SDK calls.
-- Tool execution belongs to the calling app. Go-Ai only proxies `tools`, `tool_choice`, assistant `tool_calls`, and follow-up `role: "tool"` messages.
+- Tool execution, memory, and provider-specific tool validation belong to the calling app. Go-Ai only replaces the local model alias and proxies `tools`, `tool_choice`, assistant `tool_calls`, and follow-up `role: "tool"` messages.
+- Preserve unknown nested assistant tool-call fields as opaque metadata and return them unchanged with matching `role: "tool"` results. Assemble streaming tool-call deltas losslessly before the next turn; Go-Ai forwards SSE bytes without parsing or rewriting them.
 - Do not move product tools, database access, permissions, memory, RBAC, or business workflows into Go-Ai.
-- Do not log prompts, messages, request bodies, response bodies, tool arguments, provider keys, bearer tokens, `GO_AI_SHARED_SECRET`, or `.env` values.
+- Do not log prompts, messages, request bodies, response bodies, tool arguments, tool results, opaque metadata, provider keys, bearer tokens, `GO_AI_SHARED_SECRET`, or `.env` values.
 
 ## Useful files for agents
 

@@ -30,7 +30,7 @@ Agent guidance in [Agent integration guide](agent-integration.md) and [`llms.txt
 
 ## Privacy and logging
 
-Go-Ai must not log prompts, messages, request bodies, response bodies, tool arguments, authorization headers, provider keys, shared secrets, or `.env` values.
+Go-Ai must not log prompts, messages, request bodies, response bodies, tool arguments, tool results, opaque tool metadata, authorization headers, provider keys, shared secrets, or `.env` values.
 
 Logs and diagnostic headers are for operations: request IDs, status codes, latency, selected provider, resolved upstream model, fallback usage, and broad error categories. They should help debug routing and provider availability without turning the gateway into a prompt recorder.
 
@@ -38,7 +38,7 @@ Logs and diagnostic headers are for operations: request IDs, status codes, laten
 
 Tool calling is pass-through compatibility, not execution.
 
-Go-Ai forwards `tools`, `tool_choice`, assistant `tool_calls`, and follow-up `role: "tool"` messages as OpenAI-compatible JSON. It does not validate business permissions, call APIs, mutate application state, or decide whether a tool is allowed for a user.
+Go-Ai replaces the top-level local `model` alias and forwards `tools`, `tool_choice`, assistant `tool_calls`, and follow-up `role: "tool"` messages as OpenAI-compatible JSON. It does not execute tools, store memory, validate provider-specific tool semantics, call APIs, mutate application state, or decide whether a tool is allowed for a user.
 
 The application loop is responsible for:
 
@@ -46,7 +46,10 @@ The application loop is responsible for:
 2. receiving tool calls;
 3. validating the current user and request context;
 4. executing the tool;
-5. sending tool results back through Go-Ai for the final model response.
+5. preserving the complete assistant tool-call message, including opaque provider metadata, alongside matching tool results;
+6. sending that full history back through Go-Ai for the final model response.
+
+Streaming clients must assemble tool-call deltas losslessly before they retain or resend them. Go-Ai forwards SSE bytes and does not parse or rewrite those chunks. Provider-specific opaque metadata may be necessary to continue a tool/function loop; applications should preserve it without assuming a particular field is universal.
 
 ## Model aliases are the app contract
 
