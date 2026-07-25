@@ -48,7 +48,7 @@ func TestGeminiListModelsParsesOpenAICompatibleModelsEndpoint(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"gemini-test-model"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"models/gemini-test-model"},{"id":" gemini-direct-model "},{"id":""}]}`))
 	}))
 	defer server.Close()
 
@@ -62,7 +62,7 @@ func TestGeminiListModelsParsesOpenAICompatibleModelsEndpoint(t *testing.T) {
 		t.Fatalf("ListModels returned error: %v", err)
 	}
 
-	if len(models) != 1 || models[0].ID != "gemini-test-model" {
+	if len(models) != 2 || models[0].ID != "gemini-test-model" || models[1].ID != "gemini-direct-model" {
 		t.Fatalf("unexpected models: %#v", models)
 	}
 }

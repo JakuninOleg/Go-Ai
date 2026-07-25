@@ -7,9 +7,9 @@
 
 Go-Ai is a small OpenAI-compatible AI gateway written in Go for applications and services. It exposes a familiar `/v1/chat/completions` endpoint, keeps provider secrets behind your backend, resolves local model aliases, and proxies requests to upstream LLM providers.
 
-The current MVP uses OpenRouter's dynamic free router for the default alias, supports HTTP/SSE streaming pass-through, and keeps tool execution in the application layer where business context belongs.
+The current MVP uses a verified direct Gemini model for the default alias with OpenRouter's dynamic free router as fallback, supports HTTP/SSE streaming pass-through, and keeps tool execution in the application layer where business context belongs.
 
-v0.1 intentionally starts with Gemini and OpenRouter only. OpenRouter provides the default free route and an explicit Gemini route through one OpenAI-compatible API; direct Gemini remains available for a later, verified alias. See [Adding models and providers](docs/adding-models.md) for the extension path and caveats.
+v0.1 intentionally starts with Gemini and OpenRouter only. Direct Gemini provides the preferred default route, while OpenRouter provides a free fallback route and an explicit Gemini route through one OpenAI-compatible API. See [Adding models and providers](docs/adding-models.md) for the extension path and caveats.
 
 If you only need the minimum, call `/v1/chat/completions` from your backend with `Authorization: Bearer <GO_AI_SHARED_SECRET>`. Next.js examples are included because this repo often targets server-side web apps, but any backend or HTTP client can call Go-Ai.
 
@@ -18,7 +18,7 @@ If you only need the minimum, call `/v1/chat/completions` from your backend with
 - [x] OpenAI-compatible `POST /v1/chat/completions` endpoint.
 - [x] Bearer auth with `GO_AI_SHARED_SECRET` for protected routes.
 - [x] Local model aliases so client code does not depend on provider model slugs.
-- [x] No-cost best-effort default routing through OpenRouter's dynamic free router.
+- [x] Default routing through verified direct Gemini with best-effort fallback to OpenRouter's dynamic free router.
 - [x] HTTP/SSE streaming pass-through with `stream: true`.
 - [x] Tool-calling payload pass-through without server-side tool execution.
 - [x] In-process provider model catalog refresh with an in-memory refresh interval.
@@ -88,8 +88,8 @@ sequenceDiagram
 ### Prerequisites
 
 - Go version compatible with [`go.mod`](go.mod).
-- An OpenRouter API key for the default route.
-- Optional Gemini API key for direct Gemini aliases after they are verified and added.
+- A Gemini API key for the preferred default route.
+- An OpenRouter API key for the default fallback route and OpenRouter aliases.
 
 ### Configure
 

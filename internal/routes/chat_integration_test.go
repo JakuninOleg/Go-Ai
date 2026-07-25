@@ -352,19 +352,26 @@ func TestModelsEndpointRequiresAuthAndReturnsSafeStatus(t *testing.T) {
 	if payload.DefaultAlias != models.DefaultModelAlias {
 		t.Fatalf("expected default alias %q, got %q", models.DefaultModelAlias, payload.DefaultAlias)
 	}
-	if len(payload.Aliases[models.DefaultModelAlias]) != 1 {
-		t.Fatalf("expected exactly one default candidate, got %#v", payload.Aliases[models.DefaultModelAlias])
+	defaultCandidates := payload.Aliases[models.DefaultModelAlias]
+	if len(defaultCandidates) != 2 {
+		t.Fatalf("expected two default candidates, got %#v", defaultCandidates)
+	}
+	if defaultCandidates[0].Provider != models.ProviderGemini || defaultCandidates[0].Model != "gemini-3.6-flash" {
+		t.Fatalf("expected direct Gemini primary candidate, got %#v", defaultCandidates[0])
+	}
+	if defaultCandidates[1].Provider != models.ProviderOpenRouter || defaultCandidates[1].Model != "openrouter/free" {
+		t.Fatalf("expected OpenRouter free fallback candidate, got %#v", defaultCandidates[1])
 	}
 }
 
-func newTestRouter(openRouter providers.Provider) http.Handler {
-	handler, _, _ := newTestRouterWithObserver(openRouter)
+func newTestRouter(gemini providers.Provider) http.Handler {
+	handler, _, _ := newTestRouterWithObserver(gemini)
 	return handler
 }
 
-func newTestRouterWithObserver(openRouter providers.Provider) (http.Handler, *observability.Observer, *bytes.Buffer) {
+func newTestRouterWithObserver(gemini providers.Provider) (http.Handler, *observability.Observer, *bytes.Buffer) {
 	router := chi.NewRouter()
-	service := services.NewAIService(providers.NewProviderRouter(&httpCaptureProvider{}, openRouter))
+	service := services.NewAIService(providers.NewProviderRouter(gemini, &httpCaptureProvider{}))
 	logs := &bytes.Buffer{}
 	observer := observability.New(slog.New(slog.NewJSONHandler(logs, nil)))
 	Register(router, service, "test-secret", observer)

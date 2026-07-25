@@ -8,8 +8,8 @@ func TestResolveReturnsDefaultModel(t *testing.T) {
 		t.Fatalf("Resolve returned error: %v", err)
 	}
 
-	if modelConfig.Provider != ProviderOpenRouter {
-		t.Fatalf("expected default provider %q, got %q", ProviderOpenRouter, modelConfig.Provider)
+	if modelConfig.Provider != ProviderGemini {
+		t.Fatalf("expected default provider %q, got %q", ProviderGemini, modelConfig.Provider)
 	}
 	if modelConfig.Name == "" {
 		t.Fatal("expected default model name to be set")
@@ -34,7 +34,11 @@ func TestResolveReturnsUnknownModelError(t *testing.T) {
 func TestAliasRegistryUsesFreeDefaultAndConfirmedExplicitGemini(t *testing.T) {
 	testCases := map[string][]ModelConfig{
 		DefaultModelAlias: {
+			{Name: "gemini-3.6-flash", Provider: ProviderGemini},
 			{Name: "openrouter/free", Provider: ProviderOpenRouter},
+		},
+		"gemini-flash": {
+			{Name: "gemini-3.6-flash", Provider: ProviderGemini},
 		},
 		"openrouter-gemini": {
 			{Name: "google/gemini-2.5-flash", Provider: ProviderOpenRouter},
@@ -61,16 +65,19 @@ func TestAliasRegistryUsesFreeDefaultAndConfirmedExplicitGemini(t *testing.T) {
 	}
 }
 
-func TestDefaultHasNoPaidFallback(t *testing.T) {
+func TestDefaultFallsBackOnlyToFreeOpenRouterRoute(t *testing.T) {
 	candidates, err := ResolveCandidates(DefaultModelAlias)
 	if err != nil {
 		t.Fatalf("ResolveCandidates(%q) returned error: %v", DefaultModelAlias, err)
 	}
 
-	if len(candidates) != 1 {
-		t.Fatalf("expected exactly one no-cost default candidate, got %#v", candidates)
+	if len(candidates) != 2 {
+		t.Fatalf("expected confirmed Gemini plus free OpenRouter default candidates, got %#v", candidates)
 	}
-	if candidates[0] != (ModelConfig{Name: "openrouter/free", Provider: ProviderOpenRouter}) {
-		t.Fatalf("unexpected default candidate: %#v", candidates[0])
+	if candidates[0] != (ModelConfig{Name: "gemini-3.6-flash", Provider: ProviderGemini}) {
+		t.Fatalf("unexpected default primary candidate: %#v", candidates[0])
+	}
+	if candidates[1] != (ModelConfig{Name: "openrouter/free", Provider: ProviderOpenRouter}) {
+		t.Fatalf("unexpected default fallback candidate: %#v", candidates[1])
 	}
 }

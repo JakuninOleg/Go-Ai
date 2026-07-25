@@ -8,8 +8,8 @@ This is intentional: provider model names change, free tiers appear and disappea
 
 v0.1 keeps provider coverage narrow on purpose.
 
-- **OpenRouter is the default free-route provider** because its `openrouter/free` router can dynamically select a currently available free model through one OpenAI-compatible API.
-- **Gemini remains an optional direct provider**, but no direct Gemini model is promoted as a public alias until discovery and a minimal chat request confirm it with the exact configured protocol.
+- **Gemini is the preferred default provider** through the verified direct OpenAI-compatible `gemini-3.6-flash` model.
+- **OpenRouter remains the default fallback provider** because its `openrouter/free` router can dynamically select a currently available free model through one OpenAI-compatible API when the direct Gemini candidate has a retryable failure or is known unavailable from the catalog.
 - **The first release should stay small and testable.** Go-Ai is not trying to be a universal provider marketplace. It is a focused gateway with local aliases, predictable routing, streaming pass-through, and safe diagnostics.
 
 Additional providers can be added through the provider interface when there is a real need and enough tests to keep the gateway behavior predictable.
@@ -19,7 +19,7 @@ Additional providers can be added through the provider interface when there is a
 For Gemini or OpenRouter, most model additions start in [`internal/models/registry.go`](../internal/models/registry.go).
 
 1. Choose the local alias clients should use.
-2. Verify the provider's real model slug against the provider's current documentation or API before relying on it in production. The current registry uses `openrouter/free` for the dynamic free route and the observed working OpenRouter model `google/gemini-2.5-flash` only as an explicit alias. Do not infer direct Gemini availability from an OpenRouter model.
+2. Verify the provider's real model slug against the provider's current documentation or API before relying on it in production. The current registry uses the stripped direct Gemini OpenAI-compatible slug `gemini-3.6-flash`, `openrouter/free` for the dynamic free fallback route, and the observed working OpenRouter model `google/gemini-2.5-flash` only as an explicit OpenRouter alias. Do not infer direct Gemini availability from an OpenRouter model.
 3. Add an entry to `AliasRegistry` with one or more `ModelConfig` candidates.
 4. Add or update the compatibility entry in `Registry` if code still needs direct alias-to-primary-model lookup.
 5. Add or update tests in `internal/models` and `internal/services` when alias resolution, fallback order, or error behavior changes.
@@ -76,9 +76,11 @@ Do not use fallback to hide invalid requests, auth failures, missing API keys, o
 
 ### Free-model policy
 
-`default` and `openrouter-free` use OpenRouter's documented `openrouter/free` router rather than a transient `:free` model slug. `default` has no other candidate: it must never silently route an omitted `model` to a fixed paid model. At request time OpenRouter selects a currently available free model compatible with the request. This preserves the local free alias while being honest about its tradeoff: the concrete model can change, free-tier limits and availability can change, and it is not a durable production-SLA fallback.
+`default` first tries the verified direct Gemini OpenAI-compatible slug `gemini-3.6-flash`, then falls back to OpenRouter's documented `openrouter/free` router rather than a transient `:free` model slug. At request time OpenRouter selects a currently available free model compatible with the request. This preserves a no-cost fallback while being honest about its tradeoff: the concrete model can change, free-tier limits and availability can change, and it is not a durable production-SLA fallback.
 
-`openrouter-gemini` is separate: it pins the observed working OpenRouter route `google/gemini-2.5-flash` and makes no free-tier claim; its observed usage was nonzero. Direct Gemini and OpenRouter have distinct catalogs and pricing/availability policies; a model being available through one does not establish availability or price through the other.
+Gemini's model catalog may report IDs with a `models/` prefix, but Gemini's OpenAI-compatible chat endpoint expects the stripped model ID in the request body. Go-Ai normalizes discovered Gemini catalog IDs to the stripped form before comparing them with the local registry.
+
+`gemini-flash` is a direct Gemini alias for `gemini-3.6-flash`. `openrouter-gemini` is separate: it pins the observed working OpenRouter route `google/gemini-2.5-flash` and makes no free-tier claim; its observed usage was nonzero. Direct Gemini and OpenRouter have distinct catalogs and pricing/availability policies; a model being available through one does not establish availability or price through the other.
 
 ## Add a new provider
 
