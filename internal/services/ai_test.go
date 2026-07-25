@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -65,8 +64,8 @@ func (p *sequenceProvider) Chat(_ context.Context, body []byte) (*http.Response,
 }
 
 func TestChatUsesDefaultModelWhenMissing(t *testing.T) {
-	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	openRouter := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(&captureProvider{}, openRouter))
 
 	_, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
 	if err != nil {
@@ -74,7 +73,7 @@ func TestChatUsesDefaultModelWhenMissing(t *testing.T) {
 	}
 
 	var request map[string]any
-	if err := json.Unmarshal(gemini.body, &request); err != nil {
+	if err := json.Unmarshal(openRouter.body, &request); err != nil {
 		t.Fatalf("failed to decode captured body: %v", err)
 	}
 
@@ -85,8 +84,8 @@ func TestChatUsesDefaultModelWhenMissing(t *testing.T) {
 }
 
 func TestChatPreservesToolCallingFieldsWithDefaultModel(t *testing.T) {
-	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	openRouter := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(&captureProvider{}, openRouter))
 
 	body := []byte(`{
 		"messages":[{"role":"user","content":"What is the weather?"}],
@@ -108,7 +107,7 @@ func TestChatPreservesToolCallingFieldsWithDefaultModel(t *testing.T) {
 	}
 
 	var request map[string]json.RawMessage
-	if err := json.Unmarshal(gemini.body, &request); err != nil {
+	if err := json.Unmarshal(openRouter.body, &request); err != nil {
 		t.Fatalf("failed to decode captured body: %v", err)
 	}
 
@@ -125,11 +124,11 @@ func TestChatPreservesToolCallingFieldsWithDefaultModel(t *testing.T) {
 }
 
 func TestChatPreservesStreamingFlagAndRewritesModel(t *testing.T) {
-	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	openRouter := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(&captureProvider{}, openRouter))
 
 	body := []byte(`{
-		"model":"gemini-flash",
+		"model":"default",
 		"messages":[{"role":"user","content":"Stream this response."}],
 		"stream":true
 	}`)
@@ -140,11 +139,11 @@ func TestChatPreservesStreamingFlagAndRewritesModel(t *testing.T) {
 	}
 
 	var request map[string]json.RawMessage
-	if err := json.Unmarshal(gemini.body, &request); err != nil {
+	if err := json.Unmarshal(openRouter.body, &request); err != nil {
 		t.Fatalf("failed to decode captured body: %v", err)
 	}
 
-	expectedModel, err := json.Marshal(models.Registry["gemini-flash"].Name)
+	expectedModel, err := json.Marshal(models.Registry[models.DefaultModelAlias].Name)
 	if err != nil {
 		t.Fatalf("failed to marshal expected model: %v", err)
 	}
@@ -153,11 +152,11 @@ func TestChatPreservesStreamingFlagAndRewritesModel(t *testing.T) {
 }
 
 func TestChatPreservesAssistantToolCalls(t *testing.T) {
-	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	openRouter := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(&captureProvider{}, openRouter))
 
 	body := []byte(`{
-		"model":"gemini-flash",
+		"model":"default",
 		"messages":[{
 			"role":"assistant",
 			"content":null,
@@ -175,7 +174,7 @@ func TestChatPreservesAssistantToolCalls(t *testing.T) {
 	}
 
 	var request map[string]json.RawMessage
-	if err := json.Unmarshal(gemini.body, &request); err != nil {
+	if err := json.Unmarshal(openRouter.body, &request); err != nil {
 		t.Fatalf("failed to decode captured body: %v", err)
 	}
 
@@ -183,11 +182,11 @@ func TestChatPreservesAssistantToolCalls(t *testing.T) {
 }
 
 func TestChatPreservesToolRoleMessage(t *testing.T) {
-	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	openRouter := &captureProvider{}
+	service := NewAIService(providers.NewProviderRouter(&captureProvider{}, openRouter))
 
 	body := []byte(`{
-		"model":"gemini-flash",
+		"model":"default",
 		"messages":[{
 			"role":"tool",
 			"tool_call_id":"call_123",
@@ -201,14 +200,14 @@ func TestChatPreservesToolRoleMessage(t *testing.T) {
 	}
 
 	var request map[string]json.RawMessage
-	if err := json.Unmarshal(gemini.body, &request); err != nil {
+	if err := json.Unmarshal(openRouter.body, &request); err != nil {
 		t.Fatalf("failed to decode captured body: %v", err)
 	}
 
 	assertRawJSONEqual(t, request["messages"], []byte(`[{"role":"tool","tool_call_id":"call_123","content":"{\"temperature\":\"-5 C\"}"}]`))
 }
 
-func TestChatDoesNotFallbackWhenPrimarySucceeds(t *testing.T) {
+func TestChatUsesOpenRouterForDefault(t *testing.T) {
 	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"gemini"}`}}}
 	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
 	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
@@ -219,113 +218,18 @@ func TestChatDoesNotFallbackWhenPrimarySucceeds(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if gemini.calls != 1 {
-		t.Fatalf("expected primary provider to be called once, got %d", gemini.calls)
+	if gemini.calls != 0 {
+		t.Fatalf("expected Gemini not to be called, got %d calls", gemini.calls)
 	}
-	if openRouter.calls != 0 {
-		t.Fatalf("expected fallback provider not to be called, got %d", openRouter.calls)
+	if openRouter.calls != 1 {
+		t.Fatalf("expected OpenRouter to be called once, got %d", openRouter.calls)
 	}
 	if resp.Header.Get("X-Go-Ai-Fallback-Used") != "false" {
 		t.Fatalf("expected fallback header false, got %q", resp.Header.Get("X-Go-Ai-Fallback-Used"))
 	}
 }
 
-func TestChatFallbacksOnPrimary503(t *testing.T) {
-	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusServiceUnavailable, body: `{"error":"high demand"}`}}}
-	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
-
-	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
-	if err != nil {
-		t.Fatalf("Chat returned error: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected fallback status %d, got %d", http.StatusOK, resp.StatusCode)
-	}
-	if resp.Header.Get("X-Go-Ai-Fallback-Used") != "true" {
-		t.Fatalf("expected fallback header true, got %q", resp.Header.Get("X-Go-Ai-Fallback-Used"))
-	}
-	if resp.Header.Get("X-Go-Ai-Provider") != models.ProviderOpenRouter {
-		t.Fatalf("expected openrouter provider header, got %q", resp.Header.Get("X-Go-Ai-Provider"))
-	}
-}
-
-func TestChatFallbacksOnPrimary429(t *testing.T) {
-	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusTooManyRequests, body: `{"error":"rate limited"}`}}}
-	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
-
-	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
-	if err != nil {
-		t.Fatalf("Chat returned error: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected fallback status %d, got %d", http.StatusOK, resp.StatusCode)
-	}
-	if openRouter.calls != 1 {
-		t.Fatalf("expected fallback provider call, got %d", openRouter.calls)
-	}
-}
-
-func TestChatDoesNotFallbackOnPrimary400(t *testing.T) {
-	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusBadRequest, body: `{"error":"bad request"}`}}}
-	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
-
-	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
-	if err != nil {
-		t.Fatalf("Chat returned error: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected primary status %d, got %d", http.StatusBadRequest, resp.StatusCode)
-	}
-	if openRouter.calls != 0 {
-		t.Fatalf("expected fallback provider not to be called, got %d", openRouter.calls)
-	}
-}
-
-func TestChatFallbacksOnPrimaryNetworkError(t *testing.T) {
-	gemini := &sequenceProvider{responses: []providerResult{{err: errors.New("network timeout")}}}
-	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
-
-	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
-	if err != nil {
-		t.Fatalf("Chat returned error: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected fallback status %d, got %d", http.StatusOK, resp.StatusCode)
-	}
-	if resp.Header.Get("X-Go-Ai-Fallback-Used") != "true" {
-		t.Fatalf("expected fallback header true, got %q", resp.Header.Get("X-Go-Ai-Fallback-Used"))
-	}
-}
-
-func TestChatFallbacksOnClassifiedPrimaryTransportError(t *testing.T) {
-	gemini := &sequenceProvider{responses: []providerResult{{err: providers.ClassifyUpstreamError("gemini", errors.New("connection refused"))}}}
-	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
-
-	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
-	if err != nil {
-		t.Fatalf("Chat returned error: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if openRouter.calls != 1 || resp.Header.Get("X-Go-Ai-Fallback-Used") != "true" {
-		t.Fatalf("expected classified transport error to use fallback, calls=%d headers=%#v", openRouter.calls, resp.Header)
-	}
-}
-
-func TestChatSkipsCandidatesKnownUnavailableFromCatalog(t *testing.T) {
+func TestChatUsesDefaultCandidatePresentInCatalog(t *testing.T) {
 	gemini := &catalogProvider{
 		sequenceProvider: &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"gemini"}`}}},
 		models:           []providers.ModelInfo{{ID: "another-gemini-model"}},
@@ -347,17 +251,16 @@ func TestChatSkipsCandidatesKnownUnavailableFromCatalog(t *testing.T) {
 	defer resp.Body.Close()
 
 	if gemini.calls != 0 {
-		t.Fatalf("expected known-unavailable Gemini candidate to be skipped, got %d calls", gemini.calls)
+		t.Fatalf("expected Gemini not to be called, got %d calls", gemini.calls)
 	}
 	if openRouter.calls != 1 || resp.Header.Get("X-Go-Ai-Provider") != models.ProviderOpenRouter {
-		t.Fatalf("expected OpenRouter fallback after catalog gate, calls=%d headers=%#v", openRouter.calls, resp.Header)
+		t.Fatalf("expected OpenRouter default candidate, calls=%d headers=%#v", openRouter.calls, resp.Header)
 	}
 }
 
-func TestChatReturnsFinalRetryableResponseWhenAllCandidatesFail(t *testing.T) {
-	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusServiceUnavailable, body: `{"error":"high demand"}`}}}
+func TestChatReturnsDefaultCandidateRetryableResponse(t *testing.T) {
 	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusGatewayTimeout, body: `{"error":"timeout"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+	service := NewAIService(providers.NewProviderRouter(&sequenceProvider{}, openRouter))
 
 	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
 	if err != nil {
@@ -377,10 +280,9 @@ func TestChatReturnsFinalRetryableResponseWhenAllCandidatesFail(t *testing.T) {
 	}
 }
 
-func TestChatFallbackPreservesToolCallingAndStreamingFields(t *testing.T) {
-	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusServiceUnavailable, body: `{"error":"high demand"}`}}}
+func TestChatDefaultPreservesToolCallingAndStreamingFields(t *testing.T) {
 	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+	service := NewAIService(providers.NewProviderRouter(&sequenceProvider{}, openRouter))
 
 	body := []byte(`{
 		"messages":[
@@ -400,7 +302,7 @@ func TestChatFallbackPreservesToolCallingAndStreamingFields(t *testing.T) {
 
 	var request map[string]json.RawMessage
 	if err := json.Unmarshal(openRouter.bodies[0], &request); err != nil {
-		t.Fatalf("failed to decode fallback body: %v", err)
+		t.Fatalf("failed to decode default body: %v", err)
 	}
 
 	assertRawJSONEqual(t, request["stream"], []byte(`true`))

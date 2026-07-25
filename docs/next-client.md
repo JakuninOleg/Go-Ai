@@ -80,7 +80,7 @@ Request body with an explicit local model alias:
 
 ```json
 {
-  "model": "gemini-flash",
+  "model": "default",
   "messages": [
     { "role": "user", "content": "Say hello in one sentence." }
   ]
@@ -91,12 +91,7 @@ Go-Ai resolves local aliases to provider-specific model names before forwarding 
 
 ## Model fallback and catalog diagnostics
 
-The `default` alias is backed by ordered provider candidates. Go-Ai tries the primary Gemini candidate first and can fall back to a conservative OpenRouter free candidate when the failure is likely temporary:
-
-- network error or timeout before an upstream response is received;
-- upstream HTTP `429`, `500`, `502`, `503`, or `504`.
-
-Go-Ai does not fall back for unknown aliases, invalid JSON, missing provider API keys, or upstream client/auth errors such as `400`, `401`, and `403`. If all candidates fail, the final upstream error response is returned when possible. This is best-effort resilience, not a 100% availability guarantee: all providers can still be down, out of quota, misconfigured, or reject an invalid request.
+The `default` alias sends every request to OpenRouter's `openrouter/free` router. It has no fixed paid fallback. OpenRouter chooses a compatible currently free model at request time, so the concrete model can change and the route remains best-effort rather than a guaranteed availability or model-selection contract.
 
 Successful responses include safe diagnostic headers that can help server-side debugging:
 
@@ -188,7 +183,7 @@ Follow-up request after the model asks for a tool:
 
 ```json
 {
-  "model": "gemini-flash",
+  "model": "default",
   "messages": [
     { "role": "user", "content": "What is the weather in Moscow?" },
     {
@@ -227,7 +222,7 @@ curl -N https://go-ai-i8r-lg.fly.dev/v1/chat/completions \
   -H "Authorization: Bearer <GO_AI_SHARED_SECRET>" \
   -H "Content-Type: application/json" \
   -d '{
-    "model":"gemini-flash",
+    "model":"default",
     "messages":[{"role":"user","content":"Say hello in one short sentence."}],
     "stream":true
   }'
@@ -255,7 +250,7 @@ export async function POST(request: NextRequest) {
       Authorization: `Bearer ${process.env.GO_AI_SHARED_SECRET}`,
     },
     body: JSON.stringify({
-      model: "gemini-flash",
+      model: "default",
       messages,
       stream: true,
     }),

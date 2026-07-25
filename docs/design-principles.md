@@ -50,7 +50,7 @@ The application loop is responsible for:
 
 ## Model aliases are the app contract
 
-Client apps should depend on local aliases such as `default` or `gemini-flash`, not raw provider slugs. Provider names change, availability changes, and fallback candidates can evolve. The alias is the public contract between apps and Go-Ai; provider-specific model names are an implementation detail behind that contract.
+Client apps should depend on local aliases such as `default` or `openrouter-free`, not raw provider slugs. Provider names change, availability changes, and alias candidates can evolve. The alias is the public contract between apps and Go-Ai; provider-specific model names are an implementation detail behind that contract.
 
 Go-Ai refreshes provider model catalogs automatically inside the running process so operators can inspect availability without constantly checking provider lists by hand. That autonomy does not make discovery an automatic router: the static alias registry remains the stable baseline, and Go-Ai does not blindly move apps to the newest discovered provider model.
 

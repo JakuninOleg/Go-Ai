@@ -8,7 +8,7 @@ Go-Ai is a small Go API layer between user applications and LLM providers. The c
 - `internal/routes` registers public and protected HTTP routes.
 - `internal/handlers` owns HTTP request/response handling, JSON error responses, and API bearer authentication.
 - `internal/services` owns OpenAI-style chat request parsing, model alias resolution, and provider selection.
-- `internal/models` is the local model registry. Gemini is the default provider for MVP.
+- `internal/models` is the local model registry. The default alias uses OpenRouter's dynamic free router; Gemini remains an optional direct provider.
 - `internal/providers` contains provider clients for Gemini and OpenRouter OpenAI-compatible endpoints.
 
 ## Current behavior

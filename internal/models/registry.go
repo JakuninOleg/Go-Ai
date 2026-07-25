@@ -28,7 +28,6 @@ func (e UnknownModelError) Error() string {
 
 var Registry = map[string]ModelConfig{
 	DefaultModelAlias:   AliasRegistry[DefaultModelAlias].Candidates[0],
-	"gemini-flash":      AliasRegistry["gemini-flash"].Candidates[0],
 	"openrouter-gemini": AliasRegistry["openrouter-gemini"].Candidates[0],
 	"openrouter-free":   AliasRegistry["openrouter-free"].Candidates[0],
 }
@@ -37,21 +36,8 @@ var AliasRegistry = map[string]AliasConfig{
 	DefaultModelAlias: {
 		Candidates: []ModelConfig{
 			{
-				Name:     "gemini-3.5-flash",
-				Provider: ProviderGemini,
-			},
-			{
 				Name:     "openrouter/free",
 				Provider: ProviderOpenRouter,
-			},
-		},
-	},
-
-	"gemini-flash": {
-		Candidates: []ModelConfig{
-			{
-				Name:     "gemini-3.5-flash",
-				Provider: ProviderGemini,
 			},
 		},
 	},
@@ -59,7 +45,7 @@ var AliasRegistry = map[string]AliasConfig{
 	"openrouter-gemini": {
 		Candidates: []ModelConfig{
 			{
-				Name:     "google/gemini-3.5-flash",
+				Name:     "google/gemini-2.5-flash",
 				Provider: ProviderOpenRouter,
 			},
 		},

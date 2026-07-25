@@ -50,7 +50,7 @@ func TestGeminiChatClassifiesHTTPClientFailureWithoutLeakingRequestDetails(t *te
 		return nil, &url.Error{Op: "Post", URL: "https://provider.example/private", Err: context.DeadlineExceeded}
 	})}
 
-	_, err := provider.Chat(context.Background(), []byte(`{"model":"gemini-3.5-flash"}`))
+	_, err := provider.Chat(context.Background(), []byte(`{"model":"gemini-test-model"}`))
 	if err == nil {
 		t.Fatal("expected Chat to return an error")
 	}

@@ -148,7 +148,7 @@ func TestChatCompletionsHTTPPassesThroughToolCallHistory(t *testing.T) {
 
 	handler := newTestRouter(fakeGemini)
 	requestBody := []byte(`{
-		"model":"gemini-flash",
+		"model":"default",
 		"messages":[
 			{"role":"user","content":"What is the weather in Moscow?"},
 			{
@@ -198,7 +198,7 @@ func TestChatCompletionsHTTPPassesThroughStreamingSSE(t *testing.T) {
 
 	handler := newTestRouter(fakeGemini)
 	requestBody := []byte(`{
-		"model":"gemini-flash",
+		"model":"default",
 		"messages":[{"role":"user","content":"Say hello."}],
 		"stream":true
 	}`)
@@ -277,7 +277,7 @@ func TestObservabilityMetricsAndSafeChatLog(t *testing.T) {
 	}
 	handler, observer, logs := newTestRouterWithObserver(fakeGemini)
 	requestBody := []byte(`{
-		"model":"gemini-flash",
+		"model":"default",
 		"messages":[{"role":"user","content":"secret prompt text that must not be logged"}],
 		"stream":true
 	}`)
@@ -352,19 +352,19 @@ func TestModelsEndpointRequiresAuthAndReturnsSafeStatus(t *testing.T) {
 	if payload.DefaultAlias != models.DefaultModelAlias {
 		t.Fatalf("expected default alias %q, got %q", models.DefaultModelAlias, payload.DefaultAlias)
 	}
-	if len(payload.Aliases[models.DefaultModelAlias]) < 2 {
-		t.Fatalf("expected default alias fallback candidates, got %#v", payload.Aliases[models.DefaultModelAlias])
+	if len(payload.Aliases[models.DefaultModelAlias]) != 1 {
+		t.Fatalf("expected exactly one default candidate, got %#v", payload.Aliases[models.DefaultModelAlias])
 	}
 }
 
-func newTestRouter(gemini providers.Provider) http.Handler {
-	handler, _, _ := newTestRouterWithObserver(gemini)
+func newTestRouter(openRouter providers.Provider) http.Handler {
+	handler, _, _ := newTestRouterWithObserver(openRouter)
 	return handler
 }
 
-func newTestRouterWithObserver(gemini providers.Provider) (http.Handler, *observability.Observer, *bytes.Buffer) {
+func newTestRouterWithObserver(openRouter providers.Provider) (http.Handler, *observability.Observer, *bytes.Buffer) {
 	router := chi.NewRouter()
-	service := services.NewAIService(providers.NewProviderRouter(gemini, &httpCaptureProvider{}))
+	service := services.NewAIService(providers.NewProviderRouter(&httpCaptureProvider{}, openRouter))
 	logs := &bytes.Buffer{}
 	observer := observability.New(slog.New(slog.NewJSONHandler(logs, nil)))
 	Register(router, service, "test-secret", observer)
