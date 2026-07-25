@@ -48,7 +48,7 @@ func TestGeminiListModelsParsesOpenAICompatibleModelsEndpoint(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"gemini-3.5-flash"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"models/gemini-test-model"},{"id":" gemini-direct-model "},{"id":""}]}`))
 	}))
 	defer server.Close()
 
@@ -62,13 +62,13 @@ func TestGeminiListModelsParsesOpenAICompatibleModelsEndpoint(t *testing.T) {
 		t.Fatalf("ListModels returned error: %v", err)
 	}
 
-	if len(models) != 1 || models[0].ID != "gemini-3.5-flash" {
+	if len(models) != 2 || models[0].ID != "gemini-test-model" || models[1].ID != "gemini-direct-model" {
 		t.Fatalf("unexpected models: %#v", models)
 	}
 }
 
 func TestProviderRouterRefreshModelCatalogCachesSuccessAndErrors(t *testing.T) {
-	gemini := &modelListerProvider{models: []ModelInfo{{ID: "gemini-3.5-flash"}}}
+	gemini := &modelListerProvider{models: []ModelInfo{{ID: "gemini-test-model"}}}
 	openRouter := &modelListerProvider{err: errTestDiscovery}
 	router := NewProviderRouter(gemini, openRouter)
 
@@ -89,7 +89,7 @@ func TestProviderRouterRefreshModelCatalogCachesSuccessAndErrors(t *testing.T) {
 	if router.IsKnownUnavailable("gemini", "missing-model") != true {
 		t.Fatal("expected missing model to be known unavailable after catalog refresh")
 	}
-	if router.IsKnownUnavailable("gemini", "gemini-3.5-flash") != false {
+	if router.IsKnownUnavailable("gemini", "gemini-test-model") != false {
 		t.Fatal("expected discovered model to be available")
 	}
 }

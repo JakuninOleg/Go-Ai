@@ -7,9 +7,9 @@
 
 Go-Ai is a small OpenAI-compatible AI gateway written in Go for applications and services. It exposes a familiar `/v1/chat/completions` endpoint, keeps provider secrets behind your backend, resolves local model aliases, and proxies requests to upstream LLM providers.
 
-The current MVP uses Gemini as the default provider, can fall back to OpenRouter for retryable failures, supports HTTP/SSE streaming pass-through, and keeps tool execution in the application layer where business context belongs.
+The current MVP uses a verified direct Gemini model for the default alias with OpenRouter's dynamic free router as fallback, supports HTTP/SSE streaming pass-through, and keeps tool execution in the application layer where business context belongs.
 
-v0.1 intentionally starts with Gemini and OpenRouter only: Gemini is the default provider this gateway was built around, and OpenRouter gives a broad fallback/aggregator path through one OpenAI-compatible API. See [Adding models and providers](docs/adding-models.md) for the extension path and caveats.
+v0.1 intentionally starts with Gemini and OpenRouter only. Direct Gemini provides the preferred default route, while OpenRouter provides a free fallback route and an explicit Gemini route through one OpenAI-compatible API. See [Adding models and providers](docs/adding-models.md) for the extension path and caveats.
 
 If you only need the minimum, call `/v1/chat/completions` from your backend with `Authorization: Bearer <GO_AI_SHARED_SECRET>`. Next.js examples are included because this repo often targets server-side web apps, but any backend or HTTP client can call Go-Ai.
 
@@ -18,7 +18,7 @@ If you only need the minimum, call `/v1/chat/completions` from your backend with
 - [x] OpenAI-compatible `POST /v1/chat/completions` endpoint.
 - [x] Bearer auth with `GO_AI_SHARED_SECRET` for protected routes.
 - [x] Local model aliases so client code does not depend on provider model slugs.
-- [x] Gemini-first routing with OpenRouter fallback for retryable upstream failures.
+- [x] Default routing through verified direct Gemini with best-effort fallback to OpenRouter's dynamic free router.
 - [x] HTTP/SSE streaming pass-through with `stream: true`.
 - [x] Tool-calling payload pass-through without server-side tool execution.
 - [x] In-process provider model catalog refresh with an in-memory refresh interval.
@@ -88,8 +88,8 @@ sequenceDiagram
 ### Prerequisites
 
 - Go version compatible with [`go.mod`](go.mod).
-- A Gemini API key for the default route.
-- Optional OpenRouter API key for fallback models.
+- A Gemini API key for the preferred default route.
+- An OpenRouter API key for the default fallback route and OpenRouter aliases.
 
 ### Configure
 
@@ -102,9 +102,9 @@ Edit `.env` with local secrets:
 ```dotenv
 PORT=8080
 GO_AI_SHARED_SECRET=change-me
-GEMINI_API_KEY=your-gemini-key
+GEMINI_API_KEY=
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
-OPENROUTER_API_KEY=
+OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 MODEL_REFRESH_INTERVAL=1h
 ```
@@ -194,6 +194,7 @@ The important boundary is the same for humans and agents: call Go-Ai from backen
 - [Deploy on a VPS with Docker Compose](docs/deploy-vps.md) covers `docker-compose.yml`, `.env` setup, logs, firewall notes, and optional Caddy HTTPS.
 - [Agent integration guide](docs/agent-integration.md) helps humans and coding agents connect applications to Go-Ai safely.
 - [Adding models and providers](docs/adding-models.md) explains local aliases, fallback ordering, provider wiring, capability caveats, and why v0.1 stays focused on Gemini plus OpenRouter.
+- [Post-deploy smoke check](docs/post-deploy-smoke-check.md) verifies health plus real provider-backed chat requests without printing credentials or model output.
 - [Next.js client integration](docs/next-client.md) shows server-side usage patterns, streaming, and tool-calling pass-through from a Next app.
 - [Design principles](docs/design-principles.md) describes the gateway boundary and non-goals.
 
@@ -207,7 +208,7 @@ The service reads configuration from environment variables and an optional local
 | `GO_AI_SHARED_SECRET` | none | Bearer token required for protected routes. |
 | `GEMINI_API_KEY` | none | Gemini provider API key. |
 | `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini OpenAI-compatible base URL. |
-| `OPENROUTER_API_KEY` | none | OpenRouter provider API key for fallback/alternative routes. |
+| `OPENROUTER_API_KEY` | none | OpenRouter provider API key for the default free route and explicit OpenRouter aliases. |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter OpenAI-compatible base URL. |
 | `MODEL_REFRESH_INTERVAL` | `1h` | Provider model discovery refresh cadence. |
 
@@ -221,12 +222,9 @@ Authorization: Bearer <GO_AI_SHARED_SECRET>
 
 Client applications should send local aliases such as `default` or omit `model` entirely. They should not depend on real provider model slugs. Go-Ai rewrites the alias to the selected upstream model before proxying the request.
 
-The `default` alias has ordered candidates. Go-Ai tries the primary Gemini model first and can fall back to a conservative OpenRouter free candidate when the upstream failure is retryable:
+`default` and `gemini-flash` use direct Gemini `gemini-3.6-flash`; `default` can fall back on retryable upstream failures to OpenRouter's dynamic free router, `openrouter/free`. The `openrouter-free` alias selects that dynamic free router directly. It is not a pin to a particular free model and does not guarantee availability or a production service level.
 
-- provider/network error before a response is received;
-- HTTP `429`, `500`, `502`, `503`, or `504` from the upstream provider.
-
-Go-Ai does not fall back for invalid client requests, unknown aliases, missing provider API keys, or upstream `400`, `401`, and `403` responses. If every candidate fails, the gateway returns the final upstream response when one exists, or a gateway error for network failures.
+`openrouter-gemini` is a separate explicit alias for `google/gemini-2.5-flash`. It is known to accept requests through OpenRouter, but it can report nonzero usage and must not be described or treated as free.
 
 Successful chat responses include diagnostic headers:
 
@@ -279,7 +277,7 @@ Streaming uses HTTP/SSE pass-through on the same endpoint:
 
 ```json
 {
-  "model": "gemini-flash",
+  "model": "default",
   "messages": [
     { "role": "user", "content": "Say hello in one short sentence." }
   ],
@@ -291,7 +289,7 @@ Go-Ai does not parse or rewrite SSE chunks. It resolves the local model alias, f
 
 ## Tool calling compatibility
 
-Go-Ai supports tool-calling payloads as an OpenAI-compatible proxy and model router. It does not execute tools itself: tool execution stays in the calling application or service.
+Go-Ai supports tool-calling payloads as an OpenAI-compatible proxy and model router. It changes the local `model` alias, but does not execute tools, store conversation memory, or validate provider-specific tool semantics. Tool execution stays in the calling application or service.
 
 ```mermaid
 sequenceDiagram
@@ -311,18 +309,19 @@ sequenceDiagram
     Provider-->>App: Final assistant response via Go-Ai
 ```
 
+The calling app must preserve the complete assistant tool-call message between turns, including unknown nested fields such as provider-specific `extra_content`, and send it back unchanged with the matching `role: "tool"` result. Some providers require opaque metadata to continue a tool/function loop; this is not a field that every provider uses. For streaming, assemble tool-call deltas losslessly before constructing that next request. Go-Ai forwards upstream SSE bytes and does not parse, merge, or repair tool-call chunks. Do not log tool arguments, tool results, opaque metadata, prompts, or secrets.
+
 For the minimal HTTP example, see [examples/minimal-http-client](examples/minimal-http-client). For a Next-focused integration guide with auth, fetch examples, HTTP/SSE streaming, tool-calling flow, and voice-input guidance, see [docs/next-client.md](docs/next-client.md).
 
 ## Fallback behavior
 
 ```mermaid
 flowchart TD
-    Start[Request uses default alias] --> Primary[Try Gemini candidate]
-    Primary -->|Success| Return[Proxy response]
-    Primary -->|Retryable network/status error| Fallback[Try OpenRouter fallback candidate]
-    Primary -->|Client/auth/config error| Error[Return error without fallback]
-    Fallback -->|Success| Return
-    Fallback -->|Failure| Final[Return final upstream response or gateway error]
+    Start[Request uses default alias] --> Gemini[Call Gemini gemini-3.6-flash]
+    Gemini -->|Success| Return[Proxy response]
+    Gemini -->|Retryable failure| Router[Call OpenRouter openrouter/free]
+    Router -->|Success| Return
+    Router -->|Failure| Final[Return upstream response or gateway error]
 ```
 
 Fallback is a resilience feature, not an availability guarantee. All providers can still be down, out of quota, misconfigured, or reject an invalid request.
@@ -342,7 +341,7 @@ The tradeoff is intentional: Go-Ai provides a focused gateway layer, not a full 
 
 ## Why only Gemini and OpenRouter in v0.1?
 
-Provider coverage is intentionally small for the first public baseline. Gemini is the default because it is the primary provider Go-Ai was built around for personal server-side apps and has an OpenAI-compatible endpoint. OpenRouter is included as a fallback and aggregator because it can route to many models through one OpenAI-compatible API and can provide free or low-cost fallback candidates.
+Provider coverage is intentionally small for the first public baseline. Direct Gemini `gemini-3.6-flash` is the default route, with OpenRouter's dynamic free router as its retryable fallback. OpenRouter also provides an explicit, potentially paid Gemini route through one OpenAI-compatible API.
 
 Keeping the provider set narrow makes the release easier to test and keeps the project honest about its scope. Go-Ai is a focused gateway, not a universal provider marketplace. More providers can be added through the documented provider interface when they have a clear use case and tests. See [Adding models and providers](docs/adding-models.md).
 

@@ -80,7 +80,7 @@ Request body with an explicit local model alias:
 
 ```json
 {
-  "model": "gemini-flash",
+  "model": "default",
   "messages": [
     { "role": "user", "content": "Say hello in one sentence." }
   ]
@@ -91,12 +91,7 @@ Go-Ai resolves local aliases to provider-specific model names before forwarding 
 
 ## Model fallback and catalog diagnostics
 
-The `default` alias is backed by ordered provider candidates. Go-Ai tries the primary Gemini candidate first and can fall back to a conservative OpenRouter free candidate when the failure is likely temporary:
-
-- network error or timeout before an upstream response is received;
-- upstream HTTP `429`, `500`, `502`, `503`, or `504`.
-
-Go-Ai does not fall back for unknown aliases, invalid JSON, missing provider API keys, or upstream client/auth errors such as `400`, `401`, and `403`. If all candidates fail, the final upstream error response is returned when possible. This is best-effort resilience, not a 100% availability guarantee: all providers can still be down, out of quota, misconfigured, or reject an invalid request.
+The `default` alias first uses direct Gemini `gemini-3.6-flash` and can fall back on retryable upstream failures to OpenRouter's `openrouter/free` router. OpenRouter chooses a compatible currently free model at request time, so its fallback model can change and remains best-effort rather than a guaranteed availability or model-selection contract. `openrouter-gemini` separately targets `google/gemini-2.5-flash` and has no free-tier claim.
 
 Successful responses include safe diagnostic headers that can help server-side debugging:
 
@@ -133,7 +128,7 @@ Go-Ai writes structured safe logs to stdout/stderr. On Fly.io, inspect them with
 fly logs -a go-ai-i8r-lg
 ```
 
-The chat log line includes safe metadata such as request ID, route, status, duration, selected provider, upstream model, fallback flag, streaming flag, and error type. It does not log prompts, messages, request/response bodies, tool arguments, `Authorization` headers, provider keys, or `.env` values.
+The chat log line includes safe metadata such as request ID, route, status, duration, selected provider, upstream model, fallback flag, streaming flag, and error type. It does not log prompts, messages, request/response bodies, tool arguments, tool results, opaque tool metadata, `Authorization` headers, provider keys, or `.env` values.
 
 Runtime counters are exposed through the separate protected runtime status endpoint:
 
@@ -146,7 +141,7 @@ The response contains a safe in-memory snapshot: uptime, request totals, success
 
 ## Tool calling: Variant A flow
 
-Go-Ai does not execute tools and does not know your application's database, APIs, permissions, or business logic. It only proxies OpenAI-compatible tool-calling payloads.
+Go-Ai does not execute tools, store memory, validate provider-specific tool semantics, or know your application's database, APIs, permissions, or business logic. It only proxies OpenAI-compatible tool-calling payloads after replacing the local model alias.
 
 The client or Next server owns tool execution:
 
@@ -155,6 +150,8 @@ The client or Next server owns tool execution:
 3. The model may return assistant `tool_calls`.
 4. Next validates and executes the requested tools in application code.
 5. Next sends a follow-up chat request that includes each tool result as a message with `role: "tool"` and the matching `tool_call_id`.
+
+Keep the entire assistant tool-call message in history, not just `id`, function name, and arguments. Unknown nested fields are opaque provider metadata and must be sent back unchanged with the matching `role: "tool"` result. For example, a provider may include `extra_content` to continue a tool/function loop; do not assume that every provider needs or emits that field. Direct Gemini 3 function/tool flows can carry metadata that must round-trip, so do not rebuild those messages from a narrow TypeScript type.
 
 Initial request example:
 
@@ -188,7 +185,7 @@ Follow-up request after the model asks for a tool:
 
 ```json
 {
-  "model": "gemini-flash",
+  "model": "default",
   "messages": [
     { "role": "user", "content": "What is the weather in Moscow?" },
     {
@@ -218,7 +215,7 @@ Follow-up request after the model asks for a tool:
 
 Go-Ai supports streaming as HTTP/SSE pass-through on the same endpoint: `POST /v1/chat/completions`. This is not a WebSocket flow. Send `stream: true` in the OpenAI-compatible request body and read the response as a stream.
 
-Go-Ai does not parse or modify SSE chunks. It resolves the local model alias, forwards the request upstream, then proxies the upstream status, headers, and body back to the caller. Fallback can happen only if the upstream returns a retryable status before Go-Ai starts proxying the response body; once streaming body chunks are being sent to the client, Go-Ai cannot transparently switch to another stream. Streaming tool calls may arrive split across multiple SSE chunks, so your Next app or browser UI must assemble partial deltas before executing or displaying structured tool-call data. Tool execution still stays in the client/Next application; Go-Ai only passes payloads through.
+Go-Ai does not parse or modify SSE chunks. It resolves the local model alias, forwards the request upstream, then proxies the upstream status, headers, and body back to the caller. Fallback can happen only if the upstream returns a retryable status before Go-Ai starts proxying the response body; once streaming body chunks are being sent to the client, Go-Ai cannot transparently switch to another stream. Streaming tool calls may arrive split across multiple SSE chunks, so your Next app or browser UI must assemble partial deltas losslessly before executing or displaying structured tool-call data. Retain every completed tool-call field, including unknown opaque metadata, in the next-turn history. Tool execution still stays in the client/Next application; Go-Ai only passes payloads through.
 
 Quick deployed smoke test with curl:
 
@@ -227,7 +224,7 @@ curl -N https://go-ai-i8r-lg.fly.dev/v1/chat/completions \
   -H "Authorization: Bearer <GO_AI_SHARED_SECRET>" \
   -H "Content-Type: application/json" \
   -d '{
-    "model":"gemini-flash",
+    "model":"default",
     "messages":[{"role":"user","content":"Say hello in one short sentence."}],
     "stream":true
   }'
@@ -255,7 +252,7 @@ export async function POST(request: NextRequest) {
       Authorization: `Bearer ${process.env.GO_AI_SHARED_SECRET}`,
     },
     body: JSON.stringify({
-      model: "gemini-flash",
+      model: "default",
       messages,
       stream: true,
     }),
@@ -320,7 +317,8 @@ while (true) {
     if (data === "[DONE]") return;
 
     // Parse provider/OpenAI-compatible deltas here and update your UI.
-    // Tool-call deltas may be partial and need accumulation before use.
+    // Tool-call deltas may be partial: accumulate every field, including
+    // unknown metadata, before using or storing the completed tool call.
     console.log(data);
   }
 }

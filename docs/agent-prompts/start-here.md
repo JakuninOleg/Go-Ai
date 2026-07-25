@@ -48,7 +48,7 @@ Goals:
 - do not expose secrets in browser code or public env vars;
 - preserve the current UI/API contract where possible;
 - if streaming exists, preserve it via stream:true;
-- if tools/memory/actions exist, execute them in this app; Go-Ai only proxies tool_calls;
+- if tools/memory/actions exist, execute them in this app; Go-Ai only proxies tool_calls, and the app must preserve opaque tool-call metadata as instructed in add-tool-calling.md;
 - run the project checks after changes.
 
 First audit the current AI integration and propose a migration plan before editing files.

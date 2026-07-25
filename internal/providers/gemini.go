@@ -39,7 +39,7 @@ func (g *GeminiProvider) Chat(
 	)
 
 	if err != nil {
-		return nil, err
+		return nil, ClassifyUpstreamError("gemini", err)
 	}
 
 	req.Header.Set(
@@ -52,7 +52,12 @@ func (g *GeminiProvider) Chat(
 		"Bearer "+g.cfg.APIKey,
 	)
 
-	return g.client.Do(req)
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, ClassifyUpstreamError("gemini", err)
+	}
+
+	return resp, nil
 }
 
 func (g *GeminiProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {
@@ -96,11 +101,16 @@ func (g *GeminiProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 
 	models := make([]ModelInfo, 0, len(payload.Data))
 	for _, model := range payload.Data {
-		if strings.TrimSpace(model.ID) == "" {
+		modelID := normalizeGeminiModelID(model.ID)
+		if modelID == "" {
 			continue
 		}
-		models = append(models, ModelInfo{ID: model.ID})
+		models = append(models, ModelInfo{ID: modelID})
 	}
 
 	return models, nil
+}
+
+func normalizeGeminiModelID(modelID string) string {
+	return strings.TrimPrefix(strings.TrimSpace(modelID), "models/")
 }
