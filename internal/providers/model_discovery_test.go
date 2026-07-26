@@ -94,6 +94,35 @@ func TestProviderRouterRefreshModelCatalogCachesSuccessAndErrors(t *testing.T) {
 	}
 }
 
+func TestProviderRouterUpdatesRuntimeGeminiSelectionAndRetainsItAfterFailure(t *testing.T) {
+	gemini := &modelListerProvider{models: []ModelInfo{{ID: "models/gemini-3.7-flash"}}}
+	router := NewProviderRouter(gemini, &modelListerProvider{})
+
+	if err := router.RefreshModelCatalog(context.Background()); err != nil {
+		t.Fatalf("RefreshModelCatalog returned error: %v", err)
+	}
+	if selected := router.RuntimeGeminiSelectionSnapshot().ActivePrimary; selected != "gemini-3.7-flash" {
+		t.Fatalf("expected initial selection, got %q", selected)
+	}
+
+	gemini.models = []ModelInfo{{ID: "gemini-3.10-flash"}}
+	if err := router.RefreshModelCatalog(context.Background()); err != nil {
+		t.Fatalf("RefreshModelCatalog returned error: %v", err)
+	}
+	if selected := router.RuntimeGeminiSelectionSnapshot().ActivePrimary; selected != "gemini-3.10-flash" {
+		t.Fatalf("expected updated selection, got %q", selected)
+	}
+
+	gemini.err = errTestDiscovery
+	if err := router.RefreshModelCatalog(context.Background()); err == nil {
+		t.Fatal("expected refresh error")
+	}
+	snapshot := router.RuntimeGeminiSelectionSnapshot()
+	if snapshot.ActivePrimary != "gemini-3.10-flash" || snapshot.LastResultCategory != "catalog_error" {
+		t.Fatalf("expected selected model to remain active after failure, got %#v", snapshot)
+	}
+}
+
 type modelListerProvider struct {
 	models []ModelInfo
 	err    error

@@ -55,7 +55,7 @@ Streaming clients must assemble tool-call deltas losslessly before they retain o
 
 Client apps should depend on local aliases such as `default` or `openrouter-free`, not raw provider slugs. Provider names change, availability changes, and alias candidates can evolve. The alias is the public contract between apps and Go-Ai; provider-specific model names are an implementation detail behind that contract.
 
-Go-Ai refreshes provider model catalogs automatically inside the running process so operators can inspect availability without constantly checking provider lists by hand. That autonomy does not make discovery an automatic router: the static alias registry remains the stable baseline, and Go-Ai does not blindly move apps to the newest discovered provider model.
+Go-Ai refreshes provider model catalogs automatically inside the running process so operators can inspect availability without constantly checking provider lists by hand. The static alias registry remains the app contract. Its one constrained dynamic route is the direct Gemini primary for `default` and `gemini-flash`: it selects only the highest exact stable `gemini-<major>.<minor>-flash` ID (optional numeric revision) from the Gemini catalog. This process-local, catalog-only promotion deliberately does not prove paid, chat, SSE, tool, or application-specific compatibility.
 
 Changing alias behavior should be treated as a compatibility change and covered by tests.
 

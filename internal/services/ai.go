@@ -64,7 +64,7 @@ func (s *AIService) Chat(
 		}
 	}
 
-	candidates, err := models.ResolveCandidates(requestedModel)
+	candidates, err := s.router.ResolveModelCandidates(requestedModel)
 	if err != nil {
 		return nil, err
 	}
@@ -134,19 +134,15 @@ func (s *AIService) Chat(
 }
 
 func (s *AIService) ModelAliases() map[string][]models.ModelConfig {
-	aliases := make(map[string][]models.ModelConfig, len(models.AliasRegistry))
-
-	for alias, config := range models.AliasRegistry {
-		candidates := make([]models.ModelConfig, len(config.Candidates))
-		copy(candidates, config.Candidates)
-		aliases[alias] = candidates
-	}
-
-	return aliases
+	return s.router.ModelAliases()
 }
 
 func (s *AIService) ProviderModelCatalogSnapshot() providers.ModelCatalogSnapshot {
 	return s.router.ModelCatalogSnapshot()
+}
+
+func (s *AIService) RuntimeGeminiSelectionSnapshot() models.RuntimeGeminiSelectionSnapshot {
+	return s.router.RuntimeGeminiSelectionSnapshot()
 }
 
 func (s *AIService) RefreshProviderModelCatalog(ctx context.Context) error {

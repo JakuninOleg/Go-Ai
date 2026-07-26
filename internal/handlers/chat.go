@@ -276,6 +276,18 @@ func writeServiceError(w http.ResponseWriter, err error) (int, string) {
 		return http.StatusBadRequest, "unknown_model"
 	}
 
+	var unavailableModelErr models.ModelUnavailableError
+	if errors.As(err, &unavailableModelErr) {
+		writeJSONError(
+			w,
+			"model is currently unavailable: "+unavailableModelErr.Alias,
+			"server_error",
+			"model_unavailable",
+			http.StatusServiceUnavailable,
+		)
+		return http.StatusServiceUnavailable, "model_unavailable"
+	}
+
 	if errors.Is(err, services.ErrInvalidJSON) {
 		writeJSONError(
 			w,

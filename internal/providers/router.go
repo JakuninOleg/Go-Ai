@@ -6,12 +6,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jakuninoleg/Go-Ai/internal/models"
 )
 
 type ProviderRouter struct {
 	gemini     Provider
 	openRouter Provider
 	catalog    *ModelCatalog
+	selector   *models.RuntimeGeminiSelector
 }
 
 type ProviderModelsSnapshot struct {
@@ -43,6 +46,7 @@ func NewProviderRouter(
 			modelsByProvider:    make(map[string][]ModelInfo),
 			lastErrorByProvider: make(map[string]string),
 		},
+		selector: models.NewRuntimeGeminiSelector(),
 	}
 }
 
@@ -64,6 +68,7 @@ func (r *ProviderRouter) Resolve(
 }
 
 func (r *ProviderRouter) RefreshModelCatalog(ctx context.Context) error {
+	refreshedAt := time.Now().UTC()
 	providers := map[string]Provider{
 		"gemini":     r.gemini,
 		"openrouter": r.openRouter,
@@ -91,21 +96,31 @@ func (r *ProviderRouter) RefreshModelCatalog(ctx context.Context) error {
 		refreshedModels[providerName] = modelsCopy
 	}
 
-	r.catalog.applyRefresh(refreshedModels, refreshErrors)
+	r.catalog.applyRefresh(refreshedModels, refreshErrors, refreshedAt)
+
+	if geminiModels, ok := refreshedModels[models.ProviderGemini]; ok {
+		modelIDs := make([]string, 0, len(geminiModels))
+		for _, model := range geminiModels {
+			modelIDs = append(modelIDs, model.ID)
+		}
+		r.selector.ApplyCatalog(modelIDs, refreshedAt)
+	} else if _, failed := refreshErrors[models.ProviderGemini]; failed {
+		r.selector.RecordCatalogFailure(refreshedAt)
+	}
 
 	return lastErr
 }
 
 func (r *ProviderRouter) StartModelCatalogRefresh(ctx context.Context, interval time.Duration, logWarning func(error)) {
+	if err := r.RefreshModelCatalog(ctx); err != nil && logWarning != nil {
+		logWarning(err)
+	}
+
 	if interval <= 0 {
 		return
 	}
 
 	go func() {
-		if err := r.RefreshModelCatalog(ctx); err != nil && logWarning != nil {
-			logWarning(err)
-		}
-
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
@@ -126,11 +141,27 @@ func (r *ProviderRouter) ModelCatalogSnapshot() ModelCatalogSnapshot {
 	return r.catalog.snapshot()
 }
 
+func (r *ProviderRouter) RuntimeGeminiSelectionSnapshot() models.RuntimeGeminiSelectionSnapshot {
+	return r.selector.Snapshot()
+}
+
+func (r *ProviderRouter) ResolveModelCandidates(alias string) ([]models.ModelConfig, error) {
+	return r.selector.ResolveCandidates(alias)
+}
+
+func (r *ProviderRouter) ModelAliases() map[string][]models.ModelConfig {
+	return r.selector.Aliases()
+}
+
 func (r *ProviderRouter) IsKnownUnavailable(providerName string, modelID string) bool {
+	if strings.EqualFold(providerName, models.ProviderOpenRouter) && modelID == "openrouter/free" {
+		return false
+	}
+
 	return r.catalog.isKnownUnavailable(providerName, modelID)
 }
 
-func (c *ModelCatalog) applyRefresh(modelsByProvider map[string][]ModelInfo, lastErrorByProvider map[string]string) {
+func (c *ModelCatalog) applyRefresh(modelsByProvider map[string][]ModelInfo, lastErrorByProvider map[string]string, refreshedAt time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -146,7 +177,7 @@ func (c *ModelCatalog) applyRefresh(modelsByProvider map[string][]ModelInfo, las
 	}
 
 	if len(modelsByProvider) > 0 {
-		c.lastSuccessfulRefresh = time.Now().UTC()
+		c.lastSuccessfulRefresh = refreshedAt.UTC()
 	}
 }
 

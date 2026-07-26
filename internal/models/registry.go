@@ -26,20 +26,17 @@ func (e UnknownModelError) Error() string {
 	return fmt.Sprintf("unknown model: %s", e.Alias)
 }
 
-var Registry = map[string]ModelConfig{
-	DefaultModelAlias:   AliasRegistry[DefaultModelAlias].Candidates[0],
-	"gemini-flash":      AliasRegistry["gemini-flash"].Candidates[0],
-	"openrouter-gemini": AliasRegistry["openrouter-gemini"].Candidates[0],
-	"openrouter-free":   AliasRegistry["openrouter-free"].Candidates[0],
+type ModelUnavailableError struct {
+	Alias string
 }
 
-var AliasRegistry = map[string]AliasConfig{
+func (e ModelUnavailableError) Error() string {
+	return fmt.Sprintf("model is currently unavailable: %s", e.Alias)
+}
+
+var aliasRegistry = map[string]AliasConfig{
 	DefaultModelAlias: {
 		Candidates: []ModelConfig{
-			{
-				Name:     "gemini-3.6-flash",
-				Provider: ProviderGemini,
-			},
 			{
 				Name:     "openrouter/free",
 				Provider: ProviderOpenRouter,
@@ -47,14 +44,7 @@ var AliasRegistry = map[string]AliasConfig{
 		},
 	},
 
-	"gemini-flash": {
-		Candidates: []ModelConfig{
-			{
-				Name:     "gemini-3.6-flash",
-				Provider: ProviderGemini,
-			},
-		},
-	},
+	"gemini-flash": {},
 
 	"openrouter-gemini": {
 		Candidates: []ModelConfig{
@@ -75,18 +65,9 @@ var AliasRegistry = map[string]AliasConfig{
 	},
 }
 
-func Resolve(alias string) (ModelConfig, error) {
-	modelConfig, ok := Registry[alias]
+func resolveStaticCandidates(alias string) ([]ModelConfig, error) {
+	aliasConfig, ok := aliasRegistry[alias]
 	if !ok {
-		return ModelConfig{}, UnknownModelError{Alias: alias}
-	}
-
-	return modelConfig, nil
-}
-
-func ResolveCandidates(alias string) ([]ModelConfig, error) {
-	aliasConfig, ok := AliasRegistry[alias]
-	if !ok || len(aliasConfig.Candidates) == 0 {
 		return nil, UnknownModelError{Alias: alias}
 	}
 
@@ -94,4 +75,15 @@ func ResolveCandidates(alias string) ([]ModelConfig, error) {
 	copy(candidates, aliasConfig.Candidates)
 
 	return candidates, nil
+}
+
+func staticAliases() map[string][]ModelConfig {
+	aliases := make(map[string][]ModelConfig, len(aliasRegistry))
+	for alias, config := range aliasRegistry {
+		candidates := make([]ModelConfig, len(config.Candidates))
+		copy(candidates, config.Candidates)
+		aliases[alias] = candidates
+	}
+
+	return aliases
 }

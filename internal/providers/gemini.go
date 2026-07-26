@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jakuninoleg/Go-Ai/internal/config"
+	"github.com/jakuninoleg/Go-Ai/internal/models"
 )
 
 type GeminiProvider struct {
@@ -99,18 +100,14 @@ func (g *GeminiProvider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 		return nil, err
 	}
 
-	models := make([]ModelInfo, 0, len(payload.Data))
+	modelInfos := make([]ModelInfo, 0, len(payload.Data))
 	for _, model := range payload.Data {
-		modelID := normalizeGeminiModelID(model.ID)
+		modelID := models.NormalizeGeminiModelID(model.ID)
 		if modelID == "" {
 			continue
 		}
-		models = append(models, ModelInfo{ID: modelID})
+		modelInfos = append(modelInfos, ModelInfo{ID: modelID})
 	}
 
-	return models, nil
-}
-
-func normalizeGeminiModelID(modelID string) string {
-	return strings.TrimPrefix(strings.TrimSpace(modelID), "models/")
+	return modelInfos, nil
 }

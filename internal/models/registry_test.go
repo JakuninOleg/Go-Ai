@@ -1,83 +1,156 @@
 package models
 
-import "testing"
+import (
+	"errors"
+	"sync"
+	"testing"
+	"time"
+)
 
-func TestResolveReturnsDefaultModel(t *testing.T) {
-	modelConfig, err := Resolve(DefaultModelAlias)
+func TestSelectStableGeminiFlashModelNormalizesFiltersAndRanks(t *testing.T) {
+	selected := SelectStableGeminiFlashModel([]string{
+		"models/gemini-2.5-flash",
+		"gemini-3.7-flash",
+		"gemini-3.10-flash",
+		"gemini-3.10-flash-001",
+		"gemini-3.10-flash-002",
+		"gemini-4.0-pro",
+		"gemini-4.0-flash-preview",
+		"gemini-4.0-flash-exp",
+		"gemini-4.0-flash-lite",
+		"gemini-4.0-flash-image",
+		"gemini-4.0-flash-audio",
+		"gemini-4.0-flash-live",
+		"gemini-4.0-flash-tts",
+		"gemini-4.0-flash-embedding",
+		"gemini-4.0-flash-research",
+		"gemini-4.0-flash-computer",
+		"gemini-4.0-flash-robotics",
+		"gemini-4.0-flash-native",
+		"gemini-4.0-flash-translate",
+		"gemini-4.0-flash-generate",
+		"gemini-4.0-flash-omni",
+		"gemini-flash-latest",
+	})
+
+	if selected != "gemini-3.10-flash-002" {
+		t.Fatalf("expected highest stable Flash model, got %q", selected)
+	}
+}
+
+func TestSelectStableGeminiFlashModelReturnsEmptyWithoutEligibleCandidate(t *testing.T) {
+	selected := SelectStableGeminiFlashModel([]string{
+		"gemini-3.7-pro",
+		"gemini-3.7-flash-preview",
+		"gemini-flash-latest",
+	})
+	if selected != "" {
+		t.Fatalf("expected no selected model, got %q", selected)
+	}
+}
+
+func TestRuntimeGeminiSelectorDefaultUsesOpenRouterUntilCatalogSelectsGemini(t *testing.T) {
+	selector := NewRuntimeGeminiSelector()
+
+	candidates, err := selector.ResolveCandidates(DefaultModelAlias)
 	if err != nil {
-		t.Fatalf("Resolve returned error: %v", err)
+		t.Fatalf("ResolveCandidates returned error: %v", err)
+	}
+	assertCandidates(t, candidates, []ModelConfig{{Name: "openrouter/free", Provider: ProviderOpenRouter}})
+
+	_, err = selector.ResolveCandidates("gemini-flash")
+	var unavailableErr ModelUnavailableError
+	if !errors.As(err, &unavailableErr) {
+		t.Fatalf("expected ModelUnavailableError, got %v", err)
 	}
 
-	if modelConfig.Provider != ProviderGemini {
-		t.Fatalf("expected default provider %q, got %q", ProviderGemini, modelConfig.Provider)
+	selector.ApplyCatalog([]string{"models/gemini-3.7-flash"}, time.Date(2026, 7, 25, 1, 0, 0, 0, time.UTC))
+	candidates, err = selector.ResolveCandidates(DefaultModelAlias)
+	if err != nil {
+		t.Fatalf("ResolveCandidates returned error: %v", err)
 	}
-	if modelConfig.Name == "" {
-		t.Fatal("expected default model name to be set")
+	assertCandidates(t, candidates, []ModelConfig{
+		{Name: "gemini-3.7-flash", Provider: ProviderGemini},
+		{Name: "openrouter/free", Provider: ProviderOpenRouter},
+	})
+}
+
+func TestRuntimeGeminiSelectorRetainsActivePrimaryAfterCatalogFailure(t *testing.T) {
+	selector := NewRuntimeGeminiSelector()
+	selector.ApplyCatalog([]string{"gemini-3.7-flash"}, time.Date(2026, 7, 25, 1, 0, 0, 0, time.UTC))
+	selector.RecordCatalogFailure(time.Date(2026, 7, 25, 2, 0, 0, 0, time.UTC))
+
+	snapshot := selector.Snapshot()
+	if snapshot.ActivePrimary != "gemini-3.7-flash" || snapshot.LastKnownPrimary != "gemini-3.7-flash" {
+		t.Fatalf("expected selected primary to remain active after catalog failure, got %#v", snapshot)
+	}
+	if snapshot.LastResultCategory != "catalog_error" {
+		t.Fatalf("expected catalog error category, got %q", snapshot.LastResultCategory)
 	}
 }
 
-func TestResolveReturnsUnknownModelError(t *testing.T) {
-	_, err := Resolve("missing-model")
-	if err == nil {
-		t.Fatal("expected error")
-	}
+func TestRuntimeGeminiSelectorUpdatesToNewerCatalogCandidate(t *testing.T) {
+	selector := NewRuntimeGeminiSelector()
+	selector.ApplyCatalog([]string{"gemini-3.7-flash"}, time.Now())
+	selector.ApplyCatalog([]string{"gemini-3.7-flash", "gemini-3.10-flash"}, time.Now())
 
-	unknownModelErr, ok := err.(UnknownModelError)
-	if !ok {
-		t.Fatalf("expected UnknownModelError, got %T", err)
-	}
-	if unknownModelErr.Alias != "missing-model" {
-		t.Fatalf("expected alias %q, got %q", "missing-model", unknownModelErr.Alias)
+	snapshot := selector.Snapshot()
+	if snapshot.ActivePrimary != "gemini-3.10-flash" {
+		t.Fatalf("expected newer primary, got %#v", snapshot)
 	}
 }
 
-func TestAliasRegistryUsesFreeDefaultAndConfirmedExplicitGemini(t *testing.T) {
-	testCases := map[string][]ModelConfig{
-		DefaultModelAlias: {
-			{Name: "gemini-3.6-flash", Provider: ProviderGemini},
-			{Name: "openrouter/free", Provider: ProviderOpenRouter},
-		},
-		"gemini-flash": {
-			{Name: "gemini-3.6-flash", Provider: ProviderGemini},
-		},
-		"openrouter-gemini": {
-			{Name: "google/gemini-2.5-flash", Provider: ProviderOpenRouter},
-		},
-		"openrouter-free": {
-			{Name: "openrouter/free", Provider: ProviderOpenRouter},
-		},
+func TestRuntimeGeminiSelectorSupportsConcurrentRefreshAndResolution(t *testing.T) {
+	selector := NewRuntimeGeminiSelector()
+	var waitGroup sync.WaitGroup
+
+	for index := 0; index < 16; index++ {
+		waitGroup.Add(1)
+		go func(index int) {
+			defer waitGroup.Done()
+			if index%2 == 0 {
+				selector.ApplyCatalog([]string{"gemini-3.7-flash", "gemini-3.10-flash"}, time.Now())
+				return
+			}
+			_, _ = selector.ResolveCandidates(DefaultModelAlias)
+			_ = selector.Snapshot()
+		}(index)
 	}
 
-	for alias, expected := range testCases {
-		candidates, err := ResolveCandidates(alias)
+	waitGroup.Wait()
+}
+
+func TestRuntimeGeminiSelectorPreservesStaticExplicitAliases(t *testing.T) {
+	selector := NewRuntimeGeminiSelector()
+
+	for alias, expected := range map[string][]ModelConfig{
+		"openrouter-gemini": {{Name: "google/gemini-2.5-flash", Provider: ProviderOpenRouter}},
+		"openrouter-free":   {{Name: "openrouter/free", Provider: ProviderOpenRouter}},
+	} {
+		candidates, err := selector.ResolveCandidates(alias)
 		if err != nil {
 			t.Fatalf("ResolveCandidates(%q) returned error: %v", alias, err)
 		}
-
-		if len(candidates) != len(expected) {
-			t.Fatalf("ResolveCandidates(%q) returned %#v, expected %#v", alias, candidates, expected)
-		}
-		for index, expectedCandidate := range expected {
-			if candidates[index] != expectedCandidate {
-				t.Fatalf("ResolveCandidates(%q)[%d] = %#v, expected %#v", alias, index, candidates[index], expectedCandidate)
-			}
-		}
+		assertCandidates(t, candidates, expected)
 	}
 }
 
-func TestDefaultFallsBackOnlyToFreeOpenRouterRoute(t *testing.T) {
-	candidates, err := ResolveCandidates(DefaultModelAlias)
-	if err != nil {
-		t.Fatalf("ResolveCandidates(%q) returned error: %v", DefaultModelAlias, err)
+func TestRuntimeGeminiSelectorReturnsUnknownModelError(t *testing.T) {
+	_, err := NewRuntimeGeminiSelector().ResolveCandidates("missing-model")
+	var unknownErr UnknownModelError
+	if !errors.As(err, &unknownErr) || unknownErr.Alias != "missing-model" {
+		t.Fatalf("expected UnknownModelError for missing alias, got %v", err)
 	}
+}
 
-	if len(candidates) != 2 {
-		t.Fatalf("expected confirmed Gemini plus free OpenRouter default candidates, got %#v", candidates)
+func assertCandidates(t *testing.T, actual, expected []ModelConfig) {
+	t.Helper()
+	if len(actual) != len(expected) {
+		t.Fatalf("expected %#v, got %#v", expected, actual)
 	}
-	if candidates[0] != (ModelConfig{Name: "gemini-3.6-flash", Provider: ProviderGemini}) {
-		t.Fatalf("unexpected default primary candidate: %#v", candidates[0])
-	}
-	if candidates[1] != (ModelConfig{Name: "openrouter/free", Provider: ProviderOpenRouter}) {
-		t.Fatalf("unexpected default fallback candidate: %#v", candidates[1])
+	for index, expectedCandidate := range expected {
+		if actual[index] != expectedCandidate {
+			t.Fatalf("candidate %d: expected %#v, got %#v", index, expectedCandidate, actual[index])
+		}
 	}
 }
