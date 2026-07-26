@@ -30,6 +30,7 @@ Go-Ai is a small OpenAI-compatible HTTP gateway for server-side applications and
 - Do not move product tools, database access, permissions, memory, RBAC, or business workflows into Go-Ai.
 - Do not log prompts, messages, request bodies, response bodies, tool arguments, tool results, opaque metadata, provider keys, bearer tokens, `GO_AI_SHARED_SECRET`, or `.env` values.
 - For browser STT UI, enforce exactly a 5:00 maximum capture: warn at 4:30, forcibly stop and immediately upload at 5:00. This frontend control is bypassable and must not be described as a server-side duration check. Keep Go-Ai's independent byte cap, stream raw multipart via the app backend with `Content-Type` and `Content-Length`, and do not persist or fully buffer audio.
+- TTS is app-owned UX, not an automatic Go-Ai feature. In a `ru` UI, hide or disable the TTS control and never call `/v1/audio/speech`. In an `en` UI, call TTS only when an app-owned reliable language guard has confirmed the final response text is English; UI locale alone is insufficient. Keep non-English or indeterminate text as text, with no automatic translation and no promise of Russian TTS. STT remains independent and may be used in `ru` and `en` under its documented contract, without unverified quality claims.
 
 ## Useful files for agents
 

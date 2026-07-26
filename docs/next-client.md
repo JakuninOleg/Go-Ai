@@ -346,3 +346,12 @@ Other voice-input approaches include:
 - an external STT service.
 
 After transcription, send the resulting text to Go-Ai as a normal chat message. Vercel AI SDK may still help with chat state or streaming UI, but it is optional for voice capture/transcription.
+
+## Voice output (TTS)
+
+TTS is an application UX decision, not automatic Go-Ai behavior. Keep the Go-Ai bearer secret in a Next server route that proxies `POST /v1/audio/speech`; browser code must not call Go-Ai directly. Stream the binary response rather than parsing it as JSON, storing it, or fully buffering it.
+
+- In a `ru` interface locale, the first version must hide or disable the speech control and must not call the TTS endpoint.
+- In an `en` interface locale, request TTS only after an app-owned reliable language guard verifies that the final assistant text is English. Do not use the UI locale as the guard: the model can return Russian in an English UI.
+- When the final text is non-English or its language is indeterminate, leave it as text and skip TTS. Do not translate it automatically to enable speech, and do not promise Russian TTS support.
+- This does not limit STT: it remains independent and can be used in `ru` and `en` under the voice-input contract above, without unverified claims about transcription quality.

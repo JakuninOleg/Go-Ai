@@ -110,6 +110,15 @@ Content-Type: application/json
 
 Forward Groq-compatible JSON such as `model`, `input`, `voice`, and optional `response_format`. Go-Ai streams Groq's binary response with its upstream status and headers; do not parse it as JSON. [Groq's official TTS documentation](https://console.groq.com/docs/text-to-speech) lists `canopylabs/orpheus-v1-english` and `canopylabs/orpheus-arabic-saudi` as TTS models.
 
+### Client language policy for TTS
+
+TTS is application-owned UX; Go-Ai does not choose a language, enable speech automatically, translate text, or persist audio.
+
+- For an interface using the `ru` locale, do not offer TTS in the first version: hide or disable the user-facing speech control and do not call `POST /v1/audio/speech`.
+- For an interface using the `en` locale, TTS is allowed only when the final assistant text is actually English. The UI locale is not sufficient because a model can return Russian text in an English UI. Before sending a request to `/v1/audio/speech`, apply the app's reliable language guard to the final text; if the text is non-English or its language is indeterminate, keep the text response and do not call TTS.
+- Do not automatically translate a response to make it eligible for TTS, and do not promise Russian TTS support.
+- STT is independent of this TTS policy and may be offered in `ru` and `en` according to the transcription contract below. Do not make unverified quality claims about either language.
+
 ### Required browser capture contract
 
 For every browser microphone/STT UI, enforce this exact client-side capture contract before it uploads to the app's backend:

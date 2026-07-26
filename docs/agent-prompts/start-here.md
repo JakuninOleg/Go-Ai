@@ -50,6 +50,7 @@ Goals:
 - if streaming exists, preserve it via stream:true;
 - if tools/memory/actions exist, execute them in this app; Go-Ai only proxies tool_calls, and the app must preserve opaque tool-call metadata as instructed in add-tool-calling.md;
 - if adding browser microphone transcription through Go-Ai, enforce a 4:30 warning and hard capture stop plus immediate upload at 5:00; treat it as a frontend UX limit only, preserve multipart Content-Length when streaming through the app backend, and do not claim Go-Ai validates audio duration;
+- for TTS, keep the control hidden or disabled and never call `/v1/audio/speech` in a `ru` UI; in an `en` UI, call it only after an app-owned reliable language guard confirms that the final response text is English—UI locale alone is insufficient. Keep non-English or indeterminate responses as text, without automatic translation or promises of Russian TTS; STT remains independent and may be used in `ru` and `en` under the documented transcription contract;
 - run the project checks after changes.
 
 First audit the current AI integration and propose a migration plan before editing files.
