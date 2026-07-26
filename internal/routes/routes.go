@@ -11,7 +11,9 @@ import (
 func Register(
 	r chi.Router,
 	aiService *services.AIService,
+	audioService *services.AudioService,
 	sharedSecret string,
+	groqSTTMaxRequestBytes int64,
 	observers ...*observability.Observer,
 ) {
 	observer := firstObserver(observers...)
@@ -33,6 +35,14 @@ func Register(
 		r.Post(
 			"/v1/chat/completions",
 			handlers.ChatHandler(aiService, observer),
+		)
+		r.Post(
+			"/v1/audio/transcriptions",
+			handlers.AudioTranscriptionHandler(audioService, groqSTTMaxRequestBytes),
+		)
+		r.Post(
+			"/v1/audio/speech",
+			handlers.AudioSpeechHandler(audioService),
 		)
 
 		r.Get(

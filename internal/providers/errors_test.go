@@ -3,9 +3,11 @@ package providers
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/jakuninoleg/Go-Ai/internal/config"
@@ -63,6 +65,37 @@ func TestGeminiChatClassifiesHTTPClientFailureWithoutLeakingRequestDetails(t *te
 		t.Fatalf("unexpected upstream error: %#v", upstreamErr)
 	}
 	if got := err.Error(); got != "upstream timeout error for provider: gemini" {
+		t.Fatalf("unexpected public error string: %q", got)
+	}
+}
+
+func TestGroqSpeechClassifiesHTTPClientFailureWithoutLeakingRequestDetails(t *testing.T) {
+	provider := NewGroqProvider(config.APIConfig{
+		APIKey:  "test-key",
+		BaseURL: "https://provider.example/openai/v1",
+	})
+	provider.client = &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, &url.Error{Op: "Post", URL: "https://provider.example/private", Err: context.DeadlineExceeded}
+	})}
+
+	_, err := provider.Speech(
+		context.Background(),
+		"application/json",
+		2,
+		io.NopCloser(strings.NewReader("{}")),
+	)
+	if err == nil {
+		t.Fatal("expected Speech to return an error")
+	}
+
+	var upstreamErr UpstreamError
+	if !errors.As(err, &upstreamErr) {
+		t.Fatalf("expected UpstreamError, got %T", err)
+	}
+	if upstreamErr.Provider != "groq" || upstreamErr.Category != "timeout" {
+		t.Fatalf("unexpected upstream error: %#v", upstreamErr)
+	}
+	if got := err.Error(); got != "upstream timeout error for provider: groq" {
 		t.Fatalf("unexpected public error string: %q", got)
 	}
 }

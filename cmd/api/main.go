@@ -29,6 +29,9 @@ func main() {
 	openRouterProvider := providers.NewOpenRouterProvider(
 		cfg.Providers.OpenRouter,
 	)
+	groqProvider := providers.NewGroqProvider(
+		cfg.Providers.Groq,
+	)
 
 	aiProvider := providers.NewProviderRouter(
 		geminiProvider,
@@ -38,6 +41,7 @@ func main() {
 	aiService := services.NewAIService(
 		aiProvider,
 	)
+	audioService := services.NewAudioService(groqProvider)
 	aiService.StartProviderModelCatalogRefresh(
 		context.Background(),
 		cfg.ModelRefreshInterval,
@@ -53,7 +57,9 @@ func main() {
 	routes.Register(
 		r,
 		aiService,
+		audioService,
 		cfg.SharedSecret,
+		cfg.GroqSTTMaxRequestBytes,
 		observer,
 	)
 
