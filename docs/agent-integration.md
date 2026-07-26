@@ -81,6 +81,48 @@ if (!response.ok) {
 const data = await response.json();
 ```
 
+## Groq audio contract
+
+Audio endpoints use the same bearer authentication and must also be called only from trusted server-side code. They are direct Groq proxies: they do not use local chat-model aliases, fallback, realtime transport, or audio persistence.
+
+### Speech to text
+
+```http
+POST /v1/audio/transcriptions
+Authorization: Bearer <GO_AI_SHARED_SECRET>
+Content-Type: multipart/form-data; boundary=<boundary>
+Content-Length: <complete multipart request bytes>
+```
+
+Forward Groq-compatible multipart fields unchanged, including `file` and `model`. [Groq's official STT documentation](https://console.groq.com/docs/speech-to-text) lists `whisper-large-v3-turbo` and `whisper-large-v3` for transcriptions. Go-Ai streams the multipart body upstream; it does not parse the file, save audio to disk or a database, or buffer the complete upload in memory.
+
+`Content-Length` is mandatory for this endpoint. A missing length returns `411` with `content_length_required`; a declared length above `GROQ_STT_MAX_REQUEST_BYTES` returns `413` with `payload_too_large`. The conservative default is `25,000,000` bytes (25 MB) for the complete multipart request, aligned with Groq's documented free-tier direct-upload limit. Set a higher value only when the deployed Groq tier permits it.
+
+The byte cap is a server-side abuse guard, not a duration check: it includes multipart overhead, does not identify the audio codec or bitrate, and cannot promise an exact number of audio minutes.
+
+### Text to speech
+
+```http
+POST /v1/audio/speech
+Authorization: Bearer <GO_AI_SHARED_SECRET>
+Content-Type: application/json
+```
+
+Forward Groq-compatible JSON such as `model`, `input`, `voice`, and optional `response_format`. Go-Ai streams Groq's binary response with its upstream status and headers; do not parse it as JSON. [Groq's official TTS documentation](https://console.groq.com/docs/text-to-speech) lists `canopylabs/orpheus-v1-english` and `canopylabs/orpheus-arabic-saudi` as TTS models.
+
+### Required browser capture contract
+
+For every browser microphone/STT UI, enforce this exact client-side capture contract before it uploads to the app's backend:
+
+1. Maximum capture duration: **5:00**.
+2. At **4:30**, show a warning that capture will stop in 30 seconds.
+3. At **5:00**, forcibly stop the recorder, finalize the current blob, and immediately submit it. The user must not be able to continue the same capture past this point.
+4. Clear both timers and stop media tracks on manual stop, cancellation, errors, and component unmount, so no duplicate submission occurs.
+
+Use wall-clock elapsed time plus a hard 300,000 ms stop timer; do not rely only on `MediaRecorder` chunk cadence. This is a product/frontend limit, **not a trusted server boundary**: a modified client can bypass it. Go-Ai therefore keeps the independent byte cap above, but does not inspect audio duration and must never claim that it enforces five minutes.
+
+The browser must call the target app's own upload route, never Go-Ai directly, because `GO_AI_SHARED_SECRET` stays server-side. That app route should stream the raw multipart body to Go-Ai, preserve its `Content-Type` and `Content-Length`, and reject a missing length rather than buffering the entire upload to manufacture one.
+
 For complete examples, see:
 
 - [Minimal HTTP client](../examples/minimal-http-client)
@@ -179,6 +221,8 @@ Do not add business-specific tools, database access, or app permissions to Go-Ai
 
 - Call Go-Ai from trusted server-side code only.
 - Never expose `GO_AI_SHARED_SECRET` to the browser.
+- For browser STT, enforce the 4:30 warning and hard 5:00 stop before sending audio to the app backend. Do not represent this client-side cap as server-side validation.
+- Stream audio uploads and audio responses; do not log, persist, or fully buffer audio bodies.
 - Never commit real `.env` values.
 - Never log prompts, messages, request bodies, response bodies, tool arguments, tool results, opaque tool metadata, bearer tokens, provider API keys, shared secrets, or `.env` values.
 - Preserve app-level authentication, authorization, rate limiting, and audit behavior.

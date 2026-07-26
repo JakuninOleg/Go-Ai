@@ -9,13 +9,14 @@ Go-Ai is a small OpenAI-compatible AI gateway written in Go for applications and
 
 The current MVP selects a suitable stable direct Gemini Flash model from the discovered catalog for the default alias, with OpenRouter's dynamic free router as fallback. It supports HTTP/SSE streaming pass-through and keeps tool execution in the application layer where business context belongs.
 
-v0.1 intentionally starts with Gemini and OpenRouter only. Direct Gemini provides the preferred default route, while OpenRouter provides a free fallback route and an explicit Gemini route through one OpenAI-compatible API. See [Adding models and providers](docs/adding-models.md) for the extension path and caveats.
+Chat routing in v0.1 uses Gemini and OpenRouter only. Direct Gemini provides the preferred default route, while OpenRouter provides a free fallback route and an explicit Gemini route through one OpenAI-compatible API. Groq is wired separately for direct STT/TTS proxying, without chat fallback or model aliases. See [Adding models and providers](docs/adding-models.md) for the extension path and caveats.
 
 If you only need the minimum, call `/v1/chat/completions` from your backend with `Authorization: Bearer <GO_AI_SHARED_SECRET>`. Next.js examples are included because this repo often targets server-side web apps, but any backend or HTTP client can call Go-Ai.
 
 ## Features
 
 - [x] OpenAI-compatible `POST /v1/chat/completions` endpoint.
+- [x] Groq `POST /v1/audio/transcriptions` multipart STT and `POST /v1/audio/speech` JSON-to-binary TTS proxy endpoints.
 - [x] Bearer auth with `GO_AI_SHARED_SECRET` for protected routes.
 - [x] Local model aliases so client code does not depend on provider model slugs.
 - [x] Runtime-selected stable direct Gemini Flash primary with best-effort fallback to OpenRouter's dynamic free router.
@@ -210,6 +211,9 @@ The service reads configuration from environment variables and an optional local
 | `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini OpenAI-compatible base URL. |
 | `OPENROUTER_API_KEY` | none | OpenRouter provider API key for the default free route and explicit OpenRouter aliases. |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter OpenAI-compatible base URL. |
+| `GROQ_API_KEY` | none | Groq provider API key for audio transcription and speech. |
+| `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | Groq OpenAI-compatible base URL. |
+| `GROQ_STT_MAX_REQUEST_BYTES` | `25000000` | Maximum complete multipart request size accepted by `/v1/audio/transcriptions`. |
 | `MODEL_REFRESH_INTERVAL` | `1h` | Provider model discovery refresh cadence. |
 
 Protected routes require:

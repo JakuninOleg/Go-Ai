@@ -49,6 +49,7 @@ Goals:
 - preserve the current UI/API contract where possible;
 - if streaming exists, preserve it via stream:true;
 - if tools/memory/actions exist, execute them in this app; Go-Ai only proxies tool_calls, and the app must preserve opaque tool-call metadata as instructed in add-tool-calling.md;
+- if adding browser microphone transcription through Go-Ai, enforce a 4:30 warning and hard capture stop plus immediate upload at 5:00; treat it as a frontend UX limit only, preserve multipart Content-Length when streaming through the app backend, and do not claim Go-Ai validates audio duration;
 - run the project checks after changes.
 
 First audit the current AI integration and propose a migration plan before editing files.

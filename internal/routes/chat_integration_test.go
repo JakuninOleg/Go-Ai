@@ -422,6 +422,28 @@ func TestGeminiFlashReturnsUnavailableWhenNoRuntimePrimaryExists(t *testing.T) {
 	}
 }
 
+func TestAudioEndpointsRequireBearerAuthentication(t *testing.T) {
+	fakeGemini := &httpCaptureProvider{
+		statusCode: http.StatusOK,
+		headers:    make(http.Header),
+		response:   []byte(`{"ok":true}`),
+	}
+	handler := newTestRouter(fakeGemini)
+
+	for _, path := range []string{"/v1/audio/transcriptions", "/v1/audio/speech"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, path, nil)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusUnauthorized {
+				t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+			}
+		})
+	}
+}
+
 func newTestRouter(gemini providers.Provider) http.Handler {
 	handler, _, _ := newTestRouterWithObserver(gemini)
 	return handler
@@ -436,9 +458,26 @@ func newTestRouterWithObserver(gemini providers.Provider) (http.Handler, *observ
 	service := services.NewAIService(providerRouter)
 	logs := &bytes.Buffer{}
 	observer := observability.New(slog.New(slog.NewJSONHandler(logs, nil)))
-	Register(router, service, "test-secret", observer)
+	Register(
+		router,
+		service,
+		services.NewAudioService(routeAudioProvider{}),
+		"test-secret",
+		25_000_000,
+		observer,
+	)
 
 	return router, observer, logs
+}
+
+type routeAudioProvider struct{}
+
+func (routeAudioProvider) Transcribe(context.Context, string, int64, io.ReadCloser) (*http.Response, error) {
+	return nil, nil
+}
+
+func (routeAudioProvider) Speech(context.Context, string, int64, io.ReadCloser) (*http.Response, error) {
+	return nil, nil
 }
 
 func postChatCompletion(t *testing.T, handler http.Handler, body []byte) *httptest.ResponseRecorder {

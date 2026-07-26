@@ -328,10 +328,21 @@ For a typing effect in the UI, prefer real provider-to-Next-to-browser streaming
 
 ## Voice input
 
-Vercel AI SDK is not required for voice input itself. Voice input is usually implemented with one of these approaches:
+Vercel AI SDK is not required for voice input itself. For Groq STT through Go-Ai, the browser records locally and calls the Next app's own upload route; that server-side route streams multipart data to `POST /v1/audio/transcriptions` with the Go-Ai bearer secret. The browser must never call Go-Ai directly.
+
+Every microphone UI using this path must enforce the exact frontend capture contract:
+
+1. Maximum capture is **5:00**.
+2. Display a warning at **4:30**.
+3. At **5:00**, forcibly stop `MediaRecorder`, finalize the blob, and immediately upload it.
+4. Clear timers and stop media tracks on manual stop, cancellation, error, and unmount to avoid duplicate uploads.
+
+Use elapsed wall-clock time and a hard 300,000 ms stop timer, not only recorder chunk events. This is an intentional frontend UX limit, not trusted server validation: a client can bypass it. The Go-Ai STT route instead requires `Content-Length` and rejects requests over `GROQ_STT_MAX_REQUEST_BYTES` (25,000,000 bytes by default). That byte limit protects the server but cannot determine or guarantee audio duration because codecs and bitrates differ. Do not buffer an entire upload to construct a missing length; Go-Ai returns `411 Length Required` when it is absent.
+
+Other voice-input approaches include:
 
 - browser Web Speech API;
-- browser `MediaRecorder` plus Whisper or another speech-to-text provider;
+- browser `MediaRecorder` plus Go-Ai's Groq STT proxy or another speech-to-text provider;
 - an external STT service.
 
 After transcription, send the resulting text to Go-Ai as a normal chat message. Vercel AI SDK may still help with chat state or streaming UI, but it is optional for voice capture/transcription.
