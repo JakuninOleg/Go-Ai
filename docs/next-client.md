@@ -91,7 +91,7 @@ Go-Ai resolves local aliases to provider-specific model names before forwarding 
 
 ## Model fallback and catalog diagnostics
 
-The `default` alias first uses direct Gemini `gemini-3.6-flash` and can fall back on retryable upstream failures to OpenRouter's `openrouter/free` router. OpenRouter chooses a compatible currently free model at request time, so its fallback model can change and remains best-effort rather than a guaranteed availability or model-selection contract. `openrouter-gemini` separately targets `google/gemini-2.5-flash` and has no free-tier claim.
+At startup and each catalog refresh, `default` selects the highest normalized Gemini ID exactly matching stable `gemini-<major>.<minor>-flash` with an optional numeric revision. It can fall back on retryable upstream failures to OpenRouter's `openrouter/free` router; with no eligible direct Gemini candidate, it uses OpenRouter only. `gemini-flash` requires that direct runtime primary and returns `503 model_unavailable` if unavailable. This is catalog-only promotion, not a guarantee that a candidate supports paid use, SSE, tools, or an application's specific workflow. `openrouter-gemini` separately targets static `google/gemini-2.5-flash` and has no free-tier claim.
 
 Successful responses include safe diagnostic headers that can help server-side debugging:
 
@@ -111,9 +111,9 @@ const fallbackUsed = response.headers.get("X-Go-Ai-Fallback-Used");
 const durationMs = response.headers.get("X-Go-Ai-Duration-Ms");
 ```
 
-Go-Ai also refreshes its in-memory provider model catalog on startup and then hourly by default. No Redis is required for this MVP: Fly instances can keep a local catalog, and the static alias registry remains the safe fallback if discovery fails. Redis may make sense later for multi-instance shared state, rate limits, or cross-instance cache coordination.
+Go-Ai also refreshes its in-memory provider model catalog on startup and then hourly by default. The runtime Gemini selection is local to each process, resets/reselects on restart, and retains the last selected direct primary if a later Gemini catalog refresh fails. No Redis is required for this MVP.
 
-The protected model catalog endpoint returns local aliases and candidates together with discovered provider models and refresh diagnostics. It is not an upstream OpenAI model-list pass-through, and discovery does not automatically switch an alias target:
+The protected model catalog endpoint returns local aliases and candidates together with discovered provider models, refresh diagnostics, and runtime Gemini selection metadata. It is not an upstream OpenAI model-list pass-through:
 
 ```sh
 curl https://go-ai-i8r-lg.fly.dev/v1/models \

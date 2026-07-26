@@ -10,9 +10,10 @@ import (
 )
 
 type modelsResponse struct {
-	DefaultAlias string                         `json:"default_alias"`
-	Aliases      map[string][]modelCandidate    `json:"aliases"`
-	Catalog      providers.ModelCatalogSnapshot `json:"catalog"`
+	DefaultAlias           string                                `json:"default_alias"`
+	Aliases                map[string][]modelCandidate           `json:"aliases"`
+	Catalog                providers.ModelCatalogSnapshot        `json:"catalog"`
+	RuntimeGeminiSelection models.RuntimeGeminiSelectionSnapshot `json:"runtime_gemini_selection"`
 }
 
 type modelCandidate struct {
@@ -38,9 +39,10 @@ func ModelsHandler(service *services.AIService) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(modelsResponse{
-			DefaultAlias: models.DefaultModelAlias,
-			Aliases:      responseAliases,
-			Catalog:      service.ProviderModelCatalogSnapshot(),
+			DefaultAlias:           models.DefaultModelAlias,
+			Aliases:                responseAliases,
+			Catalog:                service.ProviderModelCatalogSnapshot(),
+			RuntimeGeminiSelection: service.RuntimeGeminiSelectionSnapshot(),
 		})
 	}
 }

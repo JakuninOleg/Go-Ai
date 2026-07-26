@@ -24,6 +24,14 @@ type httpCaptureProvider struct {
 	statusCode int
 	headers    http.Header
 	response   []byte
+	models     []providers.ModelInfo
+}
+
+func (p *httpCaptureProvider) ListModels(context.Context) ([]providers.ModelInfo, error) {
+	if p.models != nil {
+		return p.models, nil
+	}
+	return []providers.ModelInfo{{ID: "gemini-3.10-flash"}}, nil
 }
 
 func (p *httpCaptureProvider) Chat(_ context.Context, body []byte) (*http.Response, error) {
@@ -101,7 +109,7 @@ func TestChatCompletionsHTTPPassesThroughToolCallingRequestAndResponse(t *testin
 		t.Fatalf("failed to decode captured upstream body: %v", err)
 	}
 
-	expectedModel, err := json.Marshal(models.Registry[models.DefaultModelAlias].Name)
+	expectedModel, err := json.Marshal("gemini-3.10-flash")
 	if err != nil {
 		t.Fatalf("failed to marshal expected model: %v", err)
 	}
@@ -175,7 +183,7 @@ func TestChatCompletionsPreservesOpaqueToolCallMetadata(t *testing.T) {
 		t.Fatalf("failed to decode original request body: %v", err)
 	}
 
-	expectedModel, err := json.Marshal(models.Registry[models.DefaultModelAlias].Name)
+	expectedModel, err := json.Marshal("gemini-3.10-flash")
 	if err != nil {
 		t.Fatalf("failed to marshal expected model: %v", err)
 	}
@@ -270,12 +278,18 @@ func TestStatusEndpointRequiresAuthAndReturnsMetricsSnapshot(t *testing.T) {
 		t.Fatal("expected generated request id header")
 	}
 
-	var payload observability.Snapshot
+	var payload struct {
+		observability.Snapshot
+		RuntimeGeminiSelection models.RuntimeGeminiSelectionSnapshot `json:"runtime_gemini_selection"`
+	}
 	if err := json.Unmarshal(authorizedResponse.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to decode status response: %v", err)
 	}
 	if payload.Status != "ok" {
 		t.Fatalf("expected status ok, got %q", payload.Status)
+	}
+	if payload.RuntimeGeminiSelection.ActivePrimary != "gemini-3.10-flash" || !payload.RuntimeGeminiSelection.ProcessLocal {
+		t.Fatalf("expected process-local runtime selection metadata, got %#v", payload.RuntimeGeminiSelection)
 	}
 	if observer.Metrics.Snapshot().AuthFailuresTotal != 1 {
 		t.Fatalf("expected auth failure counter 1, got %d", observer.Metrics.Snapshot().AuthFailuresTotal)
@@ -313,7 +327,7 @@ func TestObservabilityMetricsAndSafeChatLog(t *testing.T) {
 	if snapshot.StreamingRequestsTotal != 1 {
 		t.Fatalf("expected streaming_requests_total 1, got %d", snapshot.StreamingRequestsTotal)
 	}
-	if snapshot.ProviderRequests[models.Registry[models.DefaultModelAlias].Provider] != 1 {
+	if snapshot.ProviderRequests[models.ProviderGemini] != 1 {
 		t.Fatalf("expected provider request counter, got %#v", snapshot.ProviderRequests)
 	}
 	if snapshot.StatusCodes["200"] != 1 {
@@ -353,8 +367,9 @@ func TestModelsEndpointRequiresAuthAndReturnsSafeStatus(t *testing.T) {
 	}
 
 	var payload struct {
-		DefaultAlias string `json:"default_alias"`
-		Aliases      map[string][]struct {
+		DefaultAlias           string                                `json:"default_alias"`
+		RuntimeGeminiSelection models.RuntimeGeminiSelectionSnapshot `json:"runtime_gemini_selection"`
+		Aliases                map[string][]struct {
 			Provider string `json:"provider"`
 			Model    string `json:"model"`
 		} `json:"aliases"`
@@ -369,11 +384,41 @@ func TestModelsEndpointRequiresAuthAndReturnsSafeStatus(t *testing.T) {
 	if len(defaultCandidates) != 2 {
 		t.Fatalf("expected two default candidates, got %#v", defaultCandidates)
 	}
-	if defaultCandidates[0].Provider != models.ProviderGemini || defaultCandidates[0].Model != "gemini-3.6-flash" {
+	if defaultCandidates[0].Provider != models.ProviderGemini || defaultCandidates[0].Model != "gemini-3.10-flash" {
 		t.Fatalf("expected direct Gemini primary candidate, got %#v", defaultCandidates[0])
 	}
 	if defaultCandidates[1].Provider != models.ProviderOpenRouter || defaultCandidates[1].Model != "openrouter/free" {
 		t.Fatalf("expected OpenRouter free fallback candidate, got %#v", defaultCandidates[1])
+	}
+	if payload.RuntimeGeminiSelection.ActivePrimary != "gemini-3.10-flash" || payload.RuntimeGeminiSelection.LastResultCategory != "eligible_candidate" {
+		t.Fatalf("expected runtime selection metadata, got %#v", payload.RuntimeGeminiSelection)
+	}
+}
+
+func TestGeminiFlashReturnsUnavailableWhenNoRuntimePrimaryExists(t *testing.T) {
+	gemini := &httpCaptureProvider{
+		statusCode: http.StatusOK,
+		headers:    make(http.Header),
+		response:   []byte(`{"ok":true}`),
+		models:     []providers.ModelInfo{{ID: "gemini-3.10-pro"}},
+	}
+	handler := newTestRouter(gemini)
+
+	response := postChatCompletion(t, handler, []byte(`{"model":"gemini-flash","messages":[]}`))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, response.Code)
+	}
+
+	var payload struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if payload.Error.Code != "model_unavailable" {
+		t.Fatalf("expected model_unavailable error code, got %q", payload.Error.Code)
 	}
 }
 
@@ -384,7 +429,11 @@ func newTestRouter(gemini providers.Provider) http.Handler {
 
 func newTestRouterWithObserver(gemini providers.Provider) (http.Handler, *observability.Observer, *bytes.Buffer) {
 	router := chi.NewRouter()
-	service := services.NewAIService(providers.NewProviderRouter(gemini, &httpCaptureProvider{}))
+	providerRouter := providers.NewProviderRouter(gemini, &httpCaptureProvider{})
+	if err := providerRouter.RefreshModelCatalog(context.Background()); err != nil {
+		panic(err)
+	}
+	service := services.NewAIService(providerRouter)
 	logs := &bytes.Buffer{}
 	observer := observability.New(slog.New(slog.NewJSONHandler(logs, nil)))
 	Register(router, service, "test-secret", observer)

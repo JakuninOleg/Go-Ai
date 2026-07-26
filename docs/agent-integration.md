@@ -47,7 +47,7 @@ Notes:
 
 - `model` is optional. If omitted, Go-Ai uses its default local alias.
 - Prefer Go-Ai local aliases over provider model slugs in client applications.
-- Do not hardcode provider slugs in apps just because they appear in `/v1/models`; Go-Ai refreshes provider catalogs, but aliases remain the stable app contract.
+- Prefer omitting `model` or sending `default` for portable app behavior. Do not hardcode provider slugs in apps just because they appear in `/v1/models`; aliases remain the stable app contract. Go-Ai can update only the constrained runtime direct Gemini primary behind `default` and `gemini-flash` after catalog refresh.
 - Send OpenAI-compatible fields such as `messages`, `stream`, `temperature`, `tools`, and `tool_choice` as needed.
 - Go-Ai resolves the local alias, forwards the request upstream, and proxies the upstream response. It does not execute tools, store memory, or validate provider-specific tool semantics.
 - Check `response.ok` before returning data to the UI.

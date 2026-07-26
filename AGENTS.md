@@ -8,14 +8,14 @@ Go-Ai is a small Go API layer between user applications and LLM providers. The c
 - `internal/routes` registers public and protected HTTP routes.
 - `internal/handlers` owns HTTP request/response handling, JSON error responses, and API bearer authentication.
 - `internal/services` owns OpenAI-style chat request parsing, model alias resolution, and provider selection.
-- `internal/models` is the local model registry. The default alias uses OpenRouter's dynamic free router; Gemini remains an optional direct provider.
+- `internal/models` is the local model registry and runtime Gemini selector. `default` dynamically prepends an eligible direct Gemini Flash primary when catalog discovery finds one, then uses OpenRouter's dynamic free router as fallback; Gemini remains optional when no eligible primary is available.
 - `internal/providers` contains provider clients for Gemini and OpenRouter OpenAI-compatible endpoints.
 
 ## Current behavior
 
 - Public route: `GET /health` provides simple liveness only; it does not check provider keys, upstream providers, or the model catalog.
 - Protected route: `POST /v1/chat/completions` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>`, accepts OpenAI-compatible chat-completions JSON and HTTP/SSE streaming, resolves local aliases, and proxies upstream responses.
-- Protected route: `GET /v1/models` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>` and returns the static local alias registry plus discovered provider catalog diagnostics. It is not an upstream OpenAI pass-through, and discovery does not automatically switch alias targets.
+- Protected route: `GET /v1/models` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>` and returns local aliases, discovered provider catalog diagnostics, and `runtime_gemini_selection`. It is not an upstream OpenAI pass-through; discovery automatically changes only the constrained direct Gemini primary behind `default` and `gemini-flash`.
 - Protected route: `GET /v1/status` requires `Authorization: Bearer <GO_AI_SHARED_SECRET>` and returns a process-local runtime metrics snapshot. Metrics reset on restart and are not shared or persisted across instances.
 - If `model` is omitted, the service uses `models.DefaultModelAlias`.
 - If `model` is present but unknown, the service returns a predictable `400` JSON error instead of silently falling back.
@@ -30,6 +30,7 @@ Environment variables are loaded from the process environment and local `.env` v
 - `GO_AI_SHARED_SECRET` protects chat completion requests. Keep it secret and never commit `.env`.
 - `GEMINI_API_KEY`, `GEMINI_BASE_URL` for Gemini.
 - `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL` for OpenRouter.
+- `MODEL_REFRESH_INTERVAL` defaults to `1h` and controls in-process provider catalog refresh.
 
 ## Local development rules
 

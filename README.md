@@ -7,7 +7,7 @@
 
 Go-Ai is a small OpenAI-compatible AI gateway written in Go for applications and services. It exposes a familiar `/v1/chat/completions` endpoint, keeps provider secrets behind your backend, resolves local model aliases, and proxies requests to upstream LLM providers.
 
-The current MVP uses a verified direct Gemini model for the default alias with OpenRouter's dynamic free router as fallback, supports HTTP/SSE streaming pass-through, and keeps tool execution in the application layer where business context belongs.
+The current MVP selects a suitable stable direct Gemini Flash model from the discovered catalog for the default alias, with OpenRouter's dynamic free router as fallback. It supports HTTP/SSE streaming pass-through and keeps tool execution in the application layer where business context belongs.
 
 v0.1 intentionally starts with Gemini and OpenRouter only. Direct Gemini provides the preferred default route, while OpenRouter provides a free fallback route and an explicit Gemini route through one OpenAI-compatible API. See [Adding models and providers](docs/adding-models.md) for the extension path and caveats.
 
@@ -18,7 +18,7 @@ If you only need the minimum, call `/v1/chat/completions` from your backend with
 - [x] OpenAI-compatible `POST /v1/chat/completions` endpoint.
 - [x] Bearer auth with `GO_AI_SHARED_SECRET` for protected routes.
 - [x] Local model aliases so client code does not depend on provider model slugs.
-- [x] Default routing through verified direct Gemini with best-effort fallback to OpenRouter's dynamic free router.
+- [x] Runtime-selected stable direct Gemini Flash primary with best-effort fallback to OpenRouter's dynamic free router.
 - [x] HTTP/SSE streaming pass-through with `stream: true`.
 - [x] Tool-calling payload pass-through without server-side tool execution.
 - [x] In-process provider model catalog refresh with an in-memory refresh interval.
@@ -35,7 +35,7 @@ Go-Ai exposes these four routes. It is compatible with the OpenAI chat-completio
 | --- | --- | --- |
 | `GET /health` | Public | Simple liveness response. It does not check provider keys, upstream providers, or the model catalog. |
 | `POST /v1/chat/completions` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Accepts OpenAI-compatible chat-completions JSON and HTTP/SSE streaming requests. Go-Ai resolves a local model alias, then proxies the upstream response. |
-| `GET /v1/models` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Returns the local alias registry and diagnostic snapshot of the discovered provider model catalog. This is not an upstream OpenAI pass-through, and discovery never automatically changes an alias target. |
+| `GET /v1/models` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Returns local aliases, discovered provider catalog diagnostics, and `runtime_gemini_selection`. This is not an upstream OpenAI pass-through; discovery changes only the constrained direct Gemini primary behind `default` and `gemini-flash`. |
 | `GET /v1/status` | `Authorization: Bearer <GO_AI_SHARED_SECRET>` | Returns a process-local runtime metrics snapshot. Metrics reset on restart and are neither shared nor persisted across instances. |
 
 ## Architecture
@@ -222,7 +222,9 @@ Authorization: Bearer <GO_AI_SHARED_SECRET>
 
 Client applications should send local aliases such as `default` or omit `model` entirely. They should not depend on real provider model slugs. Go-Ai rewrites the alias to the selected upstream model before proxying the request.
 
-`default` and `gemini-flash` use direct Gemini `gemini-3.6-flash`; `default` can fall back on retryable upstream failures to OpenRouter's dynamic free router, `openrouter/free`. The `openrouter-free` alias selects that dynamic free router directly. It is not a pin to a particular free model and does not guarantee availability or a production service level.
+At startup and every catalog refresh, Go-Ai removes an optional Gemini catalog `models/` prefix and selects the highest stable text Flash ID matching exactly `gemini-<major>.<minor>-flash` or `gemini-<major>.<minor>-flash-<numeric-revision>`. It ranks major, minor, then revision numerically in descending order. This exact match excludes preview, experimental, lite, image, audio, live, TTS, embedding, research, computer, robotics, native, translate, generate, pro, omni, `gemini-flash-latest`, and every other non-matching ID.
+
+`default` uses that runtime-selected direct Gemini primary when available, then can fall back on retryable upstream failures to OpenRouter's dynamic free router, `openrouter/free`. It does not fall back for `400`, `401`, or `403` responses. If no eligible Gemini catalog entry is available at startup, `default` uses only `openrouter/free`; it never embeds an old Gemini version. `gemini-flash` explicitly requires the runtime Gemini primary and returns `503 model_unavailable` while none is available. `openrouter-free` and `openrouter-gemini` remain static explicit aliases.
 
 `openrouter-gemini` is a separate explicit alias for `google/gemini-2.5-flash`. It is known to accept requests through OpenRouter, but it can report nonzero usage and must not be described or treated as free.
 
@@ -244,11 +246,11 @@ curl http://localhost:8080/v1/models \
 
 ### Model catalog refresh
 
-Go-Ai refreshes an in-memory provider model catalog on startup and then every `MODEL_REFRESH_INTERVAL` (`1h` by default). The refresh runs inside the Go-Ai process/container, so it works the same on Fly.io, Render, a VPS, or any Docker host. It does not require Redis, an external cron job, a database, or Fly scheduled jobs.
+Go-Ai refreshes an in-memory provider model catalog on startup and then every `MODEL_REFRESH_INTERVAL` (`1h` by default). The runtime Gemini selection is process-local and is reselected after every restart; it is not shared or persisted across instances. A later Gemini catalog failure retains the active direct primary to avoid routing flip-flops, while a successful Gemini catalog with no eligible ID clears that primary. The refresh runs inside the Go-Ai process/container and does not require Redis, an external cron job, or a database.
 
-This reduces the need to constantly check provider model availability by hand. Use `GET /v1/models` to inspect the current provider catalog and local alias diagnostics for the running instance. It is not an upstream OpenAI model-list pass-through.
+This reduces the need to constantly check provider model availability by hand. Use `GET /v1/models` to inspect the current provider catalog and local alias diagnostics for the running instance. It is not an upstream OpenAI model-list pass-through. Both `GET /v1/models` and `GET /v1/status` include a `runtime_gemini_selection` object with `active_primary`, `last_known_primary`, `last_refresh_at`, `last_selection_at`, `last_result`, `last_result_category`, and `process_local`; unavailable optional values are omitted. `active_primary` is the model currently used for direct Gemini routing, while `last_known_primary` helps distinguish a retained prior selection from an absence of one.
 
-Discovery does not replace the alias contract. Go-Ai does not blindly switch to the newest, cheapest, or first discovered model at runtime. The static alias registry remains the safe baseline for app behavior; discovery failures are logged as warnings and do not prevent the app from starting.
+Discovery does not replace the alias contract: apps still use local aliases. The only automatic target change in this MVP is the constrained direct Gemini primary selected by the stable Flash rule above. Promotion is catalog-only: Go-Ai does not run paid chat, SSE, tool-calling, or application-specific compatibility validation before selecting a catalog candidate. Operators must validate capabilities needed by their applications separately.
 
 To add aliases, adjust fallback candidates, or wire a new provider, follow [Adding models and providers](docs/adding-models.md).
 
@@ -269,7 +271,7 @@ curl http://localhost:8080/v1/status \
   -H "Authorization: Bearer <GO_AI_SHARED_SECRET>"
 ```
 
-The response is a safe in-memory snapshot with uptime, totals for requests/successes/errors/auth failures/fallbacks/streaming requests, provider counters, status-code counters, and the last request timestamp. These metrics are per process and reset on restart; with multiple Fly machines they are not shared or persisted across machines.
+The response is a safe in-memory snapshot with uptime, totals for requests/successes/errors/auth failures/fallbacks/streaming requests, provider counters, status-code counters, the last request timestamp, and a compact runtime Gemini selection snapshot. These values are per process and reset on restart; with multiple instances they are not shared or persisted.
 
 ## Streaming
 
@@ -317,7 +319,9 @@ For the minimal HTTP example, see [examples/minimal-http-client](examples/minima
 
 ```mermaid
 flowchart TD
-    Start[Request uses default alias] --> Gemini[Call Gemini gemini-3.6-flash]
+    Start[Request uses default alias] --> Selection{Runtime Gemini primary available?}
+    Selection -->|Yes| Gemini[Call selected stable Gemini Flash]
+    Selection -->|No| Router
     Gemini -->|Success| Return[Proxy response]
     Gemini -->|Retryable failure| Router[Call OpenRouter openrouter/free]
     Router -->|Success| Return
@@ -341,7 +345,7 @@ The tradeoff is intentional: Go-Ai provides a focused gateway layer, not a full 
 
 ## Why only Gemini and OpenRouter in v0.1?
 
-Provider coverage is intentionally small for the first public baseline. Direct Gemini `gemini-3.6-flash` is the default route, with OpenRouter's dynamic free router as its retryable fallback. OpenRouter also provides an explicit, potentially paid Gemini route through one OpenAI-compatible API.
+Provider coverage is intentionally small for the first public baseline. A runtime-selected stable direct Gemini Flash model is the default primary, with OpenRouter's dynamic free router as its retryable fallback. OpenRouter also provides an explicit, potentially paid Gemini route through one OpenAI-compatible API.
 
 Keeping the provider set narrow makes the release easier to test and keeps the project honest about its scope. Go-Ai is a focused gateway, not a universal provider marketplace. More providers can be added through the documented provider interface when they have a clear use case and tests. See [Adding models and providers](docs/adding-models.md).
 

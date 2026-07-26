@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -14,6 +15,10 @@ import (
 
 type captureProvider struct {
 	body []byte
+}
+
+func (p *captureProvider) ListModels(context.Context) ([]providers.ModelInfo, error) {
+	return []providers.ModelInfo{{ID: "gemini-3.10-flash"}}, nil
 }
 
 func (p *captureProvider) Chat(_ context.Context, body []byte) (*http.Response, error) {
@@ -30,6 +35,10 @@ type sequenceProvider struct {
 	calls     int
 	bodies    [][]byte
 	responses []providerResult
+}
+
+func (p *sequenceProvider) ListModels(context.Context) ([]providers.ModelInfo, error) {
+	return []providers.ModelInfo{{ID: "gemini-3.10-flash"}}, nil
 }
 
 type providerResult struct {
@@ -63,9 +72,17 @@ func (p *sequenceProvider) Chat(_ context.Context, body []byte) (*http.Response,
 	}, nil
 }
 
+func newSelectedAIService(gemini, openRouter providers.Provider) *AIService {
+	router := providers.NewProviderRouter(gemini, openRouter)
+	if err := router.RefreshModelCatalog(context.Background()); err != nil {
+		panic(err)
+	}
+	return NewAIService(router)
+}
+
 func TestChatUsesDefaultModelWhenMissing(t *testing.T) {
 	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	service := newSelectedAIService(gemini, &captureProvider{})
 
 	_, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
 	if err != nil {
@@ -77,7 +94,7 @@ func TestChatUsesDefaultModelWhenMissing(t *testing.T) {
 		t.Fatalf("failed to decode captured body: %v", err)
 	}
 
-	expectedModel := models.Registry[models.DefaultModelAlias].Name
+	expectedModel := "gemini-3.10-flash"
 	if request["model"] != expectedModel {
 		t.Fatalf("expected model %q, got %q", expectedModel, request["model"])
 	}
@@ -85,7 +102,7 @@ func TestChatUsesDefaultModelWhenMissing(t *testing.T) {
 
 func TestChatPreservesToolCallingFieldsWithDefaultModel(t *testing.T) {
 	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	service := newSelectedAIService(gemini, &captureProvider{})
 
 	body := []byte(`{
 		"messages":[{"role":"user","content":"What is the weather?"}],
@@ -111,7 +128,7 @@ func TestChatPreservesToolCallingFieldsWithDefaultModel(t *testing.T) {
 		t.Fatalf("failed to decode captured body: %v", err)
 	}
 
-	expectedModel, err := json.Marshal(models.Registry[models.DefaultModelAlias].Name)
+	expectedModel, err := json.Marshal("gemini-3.10-flash")
 	if err != nil {
 		t.Fatalf("failed to marshal expected model: %v", err)
 	}
@@ -125,7 +142,7 @@ func TestChatPreservesToolCallingFieldsWithDefaultModel(t *testing.T) {
 
 func TestChatPreservesStreamingFlagAndRewritesModel(t *testing.T) {
 	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	service := newSelectedAIService(gemini, &captureProvider{})
 
 	body := []byte(`{
 		"model":"default",
@@ -143,7 +160,7 @@ func TestChatPreservesStreamingFlagAndRewritesModel(t *testing.T) {
 		t.Fatalf("failed to decode captured body: %v", err)
 	}
 
-	expectedModel, err := json.Marshal(models.Registry[models.DefaultModelAlias].Name)
+	expectedModel, err := json.Marshal("gemini-3.10-flash")
 	if err != nil {
 		t.Fatalf("failed to marshal expected model: %v", err)
 	}
@@ -153,7 +170,7 @@ func TestChatPreservesStreamingFlagAndRewritesModel(t *testing.T) {
 
 func TestChatPreservesAssistantToolCalls(t *testing.T) {
 	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	service := newSelectedAIService(gemini, &captureProvider{})
 
 	body := []byte(`{
 		"model":"default",
@@ -183,7 +200,7 @@ func TestChatPreservesAssistantToolCalls(t *testing.T) {
 
 func TestChatPreservesToolRoleMessage(t *testing.T) {
 	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	service := newSelectedAIService(gemini, &captureProvider{})
 
 	body := []byte(`{
 		"model":"default",
@@ -210,7 +227,7 @@ func TestChatPreservesToolRoleMessage(t *testing.T) {
 func TestChatUsesGeminiForDefault(t *testing.T) {
 	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"gemini"}`}}}
 	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+	service := newSelectedAIService(gemini, openRouter)
 
 	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
 	if err != nil {
@@ -232,7 +249,7 @@ func TestChatUsesGeminiForDefault(t *testing.T) {
 func TestChatUsesDefaultCandidatePresentInCatalog(t *testing.T) {
 	gemini := &catalogProvider{
 		sequenceProvider: &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"gemini"}`}}},
-		models:           []providers.ModelInfo{{ID: "gemini-3.6-flash"}},
+		models:           []providers.ModelInfo{{ID: "gemini-3.7-flash"}},
 	}
 	openRouter := &catalogProvider{
 		sequenceProvider: &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"openrouter"}`}}},
@@ -287,10 +304,28 @@ func TestChatUsesOpenRouterFallbackWhenGeminiMissingFromCatalog(t *testing.T) {
 	}
 }
 
+func TestChatReturnsUnavailableErrorForGeminiFlashWithoutCatalogCandidate(t *testing.T) {
+	gemini := &catalogProvider{
+		sequenceProvider: &sequenceProvider{},
+		models:           []providers.ModelInfo{{ID: "gemini-3.7-pro"}},
+	}
+	openRouter := &catalogProvider{sequenceProvider: &sequenceProvider{}}
+	router := providers.NewProviderRouter(gemini, openRouter)
+	if err := router.RefreshModelCatalog(context.Background()); err != nil {
+		t.Fatalf("RefreshModelCatalog returned error: %v", err)
+	}
+
+	_, err := NewAIService(router).Chat(context.Background(), []byte(`{"model":"gemini-flash","messages":[]}`))
+	var unavailableErr models.ModelUnavailableError
+	if !errors.As(err, &unavailableErr) {
+		t.Fatalf("expected ModelUnavailableError, got %v", err)
+	}
+}
+
 func TestChatReturnsDefaultCandidateRetryableResponse(t *testing.T) {
 	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusGatewayTimeout, body: `{"error":"timeout"}`}}}
 	openRouter := &sequenceProvider{responses: []providerResult{{status: http.StatusGatewayTimeout, body: `{"error":"timeout"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, openRouter))
+	service := newSelectedAIService(gemini, openRouter)
 
 	resp, err := service.Chat(context.Background(), []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
 	if err != nil {
@@ -312,7 +347,7 @@ func TestChatReturnsDefaultCandidateRetryableResponse(t *testing.T) {
 
 func TestChatDefaultPreservesToolCallingAndStreamingFields(t *testing.T) {
 	gemini := &sequenceProvider{responses: []providerResult{{status: http.StatusOK, body: `{"provider":"gemini"}`}}}
-	service := NewAIService(providers.NewProviderRouter(gemini, &sequenceProvider{}))
+	service := newSelectedAIService(gemini, &sequenceProvider{})
 
 	body := []byte(`{
 		"messages":[
@@ -346,7 +381,7 @@ func TestChatDefaultPreservesToolCallingAndStreamingFields(t *testing.T) {
 
 func TestChatReturnsUnknownModelError(t *testing.T) {
 	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	service := newSelectedAIService(gemini, &captureProvider{})
 
 	_, err := service.Chat(context.Background(), []byte(`{"model":"does-not-exist","messages":[]}`))
 	if err == nil {
@@ -363,7 +398,7 @@ func TestChatReturnsUnknownModelError(t *testing.T) {
 
 func TestChatReturnsUnknownModelErrorWhenModelIsEmpty(t *testing.T) {
 	gemini := &captureProvider{}
-	service := NewAIService(providers.NewProviderRouter(gemini, &captureProvider{}))
+	service := newSelectedAIService(gemini, &captureProvider{})
 
 	_, err := service.Chat(context.Background(), []byte(`{"model":"","messages":[]}`))
 	if err == nil {

@@ -37,7 +37,7 @@ func Register(
 
 		r.Get(
 			"/v1/status",
-			handlers.StatusHandler(observer),
+			handlers.StatusHandler(aiService, observer),
 		)
 
 		r.Get(
